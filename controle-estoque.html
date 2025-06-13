@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle de Estoque - PetClínica São Lázaro</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class' }</script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
+      authDomain: "petclinica-e4bc5.firebaseapp.com",
+      projectId: "petclinica-e4bc5",
+      storageBucket: "petclinica-e4bc5.appspot.com",
+      messagingSenderId: "860007352252",
+      appId: "1:860007352252:web:7180c7d607965a062e0db9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // ----------------------------------------------------
+    // FUNÇÕES DE UI E TEMA
+    // ----------------------------------------------------
+
+    let isDarkMode = localStorage.getItem('theme') === 'dark';
+    document.documentElement.classList.toggle('dark', isDarkMode);
+
+    function alternarTema() {
+      isDarkMode = !isDarkMode;
+      document.documentElement.classList.toggle('dark', isDarkMode);
+      if (isDarkMode) {
+        localStorage.setItem('theme', 'dark');
+      } else {
+        localStorage.removeItem('theme');
+      }
+    }
+
+    function logout() {
+      auth.signOut().then(() => {
+        window.location.href = 'login.html';
+      }).catch((error) => {
+        console.error("Erro ao fazer logout:", error);
+        alert("Ocorreu um erro ao sair. Tente novamente.");
+      });
+    }
+
+    // ----------------------------------------------------
+    // VERIFICAÇÃO DE AUTENTICAÇÃO E CARREGAMENTO DE DADOS
+    // ----------------------------------------------------
+    let dadosEstoque = []; // Array para armazenar os dados do estoque para o gráfico e PDF
+
+    auth.onAuthStateChanged(user => {
+      if (!user) {
+        alert('Acesso não autorizado. Faça login primeiro.');
+        window.location.href = 'login.html';
+      } else {
+        carregarEstoque(); // Carrega os dados do estoque se o usuário estiver logado
+      }
+    });
+
+    // ----------------------------------------------------
+    // LÓGICA DE ESTOQUE
+    // ----------------------------------------------------
+
+    async function adicionarItem() {
+      const nome = document.getElementById('nome').value;
+      const quantidade = parseInt(document.getElementById('quantidade').value);
+      const validade = document.getElementById('validade').value;
+      const lote = document.getElementById('lote').value;
+
+      if (!nome || !quantidade) {
+        alert('Por favor, preencha o nome e a quantidade do item.');
+        return;
+      }
+      if (quantidade <= 0) {
+        alert('A quantidade deve ser um número positivo.');
+        return;
+      }
+
+      try {
+        await db.collection("estoque").add({
+          nome,
+          quantidade,
+          validade: validade || null, // Armazena null se vazio
+          lote: lote || null,         // Armazena null se vazio
+          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        alert('Item adicionado ao estoque com sucesso!');
+        document.getElementById('form-estoque').reset();
+        carregarEstoque(); // Recarrega a tabela e o gráfico
+      } catch (error) {
+        console.error("Erro ao adicionar item:", error);
+        alert('Erro ao adicionar item. Verifique o console.');
+      }
+    }
+
+    async function carregarEstoque() {
+      const tabelaCorpo = document.getElementById('tabela-estoque');
+      tabelaCorpo.innerHTML = ''; // Limpa a tabela
+      dadosEstoque = []; // Limpa os dados para o gráfico
+
+      try {
+        const snapshot = await db.collection("estoque").orderBy("nome").get();
+        if (snapshot.empty) {
+          tabelaCorpo.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum item no estoque ainda.</td></tr>';
+          atualizarGrafico(); // Atualiza o gráfico mesmo sem dados
+          return;
+        }
+
+        snapshot.forEach(doc => {
+          const item = doc.data();
+          dadosEstoque.push(item); // Adiciona para o gráfico e PDF
+          const linha = tabelaCorpo.insertRow();
+          linha.className = 'border-b border-purple-200 dark:border-purple-700';
+
+          linha.innerHTML = `
+            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'nome', this.textContent)">${item.nome}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'quantidade', this.textContent)">${item.quantidade}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'validade', this.textContent)">${item.validade || '-'}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'lote', this.textContent)">${item.lote || '-'}</td>
+            <td class="cell">
+              <button onclick="removerItem('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors">Remover</button>
+            </td>
+          `;
+        });
+        atualizarGrafico(); // Atualiza o gráfico com os novos dados
+      } catch (error) {
+        console.error("Erro ao carregar estoque:", error);
+        tabelaCorpo.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500 dark:text-red-400">Erro ao carregar estoque.</td></tr>';
+        atualizarGrafico(); // Tenta atualizar o gráfico mesmo com erro para limpar o anterior
+      }
+    }
+
+    async function editarCampoEstoque(id, campo, valor) {
+      try {
+        const atualizar = {};
+        // Converte quantidade para número, se for o campo 'quantidade'
+        if (campo === 'quantidade') {
+          const numValor = parseInt(valor);
+          if (isNaN(numValor) || numValor < 0) {
+            alert('Quantidade deve ser um número não negativo.');
+            carregarEstoque(); // Recarrega para restaurar o valor original
+            return;
+          }
+          atualizar[campo] = numValor;
+        } else {
+          atualizar[campo] = valor.trim();
+        }
+        
+        await db.collection("estoque").doc(id).update(atualizar);
+        console.log(`Campo ${campo} do item ${id} atualizado para ${valor.trim()}`);
+        carregarEstoque(); // Recarrega para atualizar o gráfico e a tabela (se quantidades mudarem)
+      } catch (error) {
+        console.error("Erro ao editar campo:", error);
+        alert('Erro ao editar campo. Verifique o console.');
+      }
+    }
+
+    async function removerItem(id) {
+      if (confirm('Tem certeza que deseja remover este item do estoque?')) {
+        try {
+          await db.collection("estoque").doc(id).delete();
+          alert('Item removido do estoque com sucesso!');
+          carregarEstoque(); // Recarrega a tabela e o gráfico
+        } catch (error) {
+          console.error("Erro ao remover item:", error);
+          alert('Erro ao remover item. Verifique o console.');
+        }
+      }
+    }
+
+    let graficoEstoque; // Variável para a instância do Chart.js
+
+    function atualizarGrafico() {
+      const ctx = document.getElementById('graficoEstoque').getContext('2d');
+      const labels = dadosEstoque.map(i => i.nome);
+      const quantidades = dadosEstoque.map(i => i.quantidade);
+      const cores = quantidades.map(q => q < 5 ? '#ef4444' : '#8b5cf6'); // Vermelho se baixo, roxo normal
+
+      if (graficoEstoque) graficoEstoque.destroy(); // Destroi o gráfico anterior se existir
+
+      graficoEstoque = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Quantidade em Estoque',
+            data: quantidades,
+            backgroundColor: cores,
+            borderColor: cores.map(c => c.replace('0.7', '1')), // Bordas mais escuras
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false, // Permite que o gráfico se ajuste melhor ao container
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              labels: {
+                color: isDarkMode ? 'white' : 'black' // Cor da legenda no modo escuro
+              }
+            },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            label += new Intl.NumberFormat('pt-BR').format(context.parsed.y);
+                        }
+                        return label;
+                    }
+                }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: isDarkMode ? 'white' : 'black' },
+              grid: { color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: { color: isDarkMode ? 'white' : 'black' },
+              grid: { color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
+            }
+          }
+        }
+      });
+    }
+
+    async function exportarPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("Relatório de Estoque - PetClínica São Lázaro", 105, 20, null, null, "center");
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("Gerado em: " + new Date().toLocaleDateString('pt-BR'), 105, 30, null, null, "center");
+
+      const head = [['Nome', 'Quantidade', 'Validade', 'Lote']];
+      const body = dadosEstoque.map(item => [
+        item.nome,
+        item.quantidade,
+        item.validade || '-',
+        item.lote || '-'
+      ]);
+
+      doc.autoTable({
+        startY: 45,
+        head: head,
+        body: body,
+        theme: 'striped',
+        headStyles: { fillColor: [139, 92, 246] }, // purple-500
+        styles: { fontSize: 9, cellPadding: 2 },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 25, halign: 'right' },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 30 }
+        },
+        didDrawPage: function (data) {
+          let str = "Página " + doc.internal.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.text(str, data.settings.margin.left, doc.internal.pageSize.height - 10);
+        }
+      });
+
+      doc.save("relatorio_estoque.pdf");
+    }
+  </script>
+</head>
+<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-white font-sans antialiased">
+  <header class="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-md">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-3xl font-extrabold tracking-tight">Controle de Estoque</h1>
+      <nav class="flex space-x-6 items-center">
+        <a href="index.html" class="hover:text-purple-200 transition duration-300">Dashboard</a>
+        <a href="admin.html" class="hover:text-purple-200 transition duration-300">Painel Administrativo</a>
+        <button onclick="logout()" class="bg-white text-purple-800 px-4 py-2 rounded-full font-semibold shadow-sm hover:bg-purple-100 transition duration-300 transform hover:scale-105">Sair</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container mx-auto p-8">
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Adicionar/Atualizar Item</h2>
+      <form id="form-estoque" onsubmit="event.preventDefault(); adicionarItem();" class="space-y-4">
+        <div>
+          <label for="nome" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nome do Item:</label>
+          <input type="text" id="nome" class="input" placeholder="Ex: Ração Premium, Antibiótico" required>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label for="quantidade" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Quantidade:</label>
+            <input type="number" id="quantidade" class="input" value="1" min="1" required>
+          </div>
+          <div>
+            <label for="validade" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Validade (Opcional):</label>
+            <input type="date" id="validade" class="input">
+          </div>
+          <div>
+            <label for="lote" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Número do Lote (Opcional):</label>
+            <input type="text" id="lote" class="input" placeholder="Lote do produto">
+          </div>
+        </div>
+        <button type="submit" class="btn-purple">Salvar Item no Estoque</button>
+      </form>
+    </section>
+
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Visualização do Estoque</h2>
+      <div class="h-80 mb-6"> <canvas id="graficoEstoque"></canvas>
+      </div>
+      <button onclick="exportarPDF()" class="btn-outline-purple">Exportar Estoque para PDF</button>
+    </section>
+
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Itens em Estoque</h2>
+      <table class="w-full text-left border border-purple-300 dark:border-purple-600 rounded-lg overflow-hidden">
+        <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200">
+          <tr>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Nome</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Quantidade</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Validade</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Lote</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tabela-estoque" class="bg-white dark:bg-gray-700 dark:text-white">
+          </tbody>
+      </table>
+    </section>
+  </main>
+
+  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
+    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+    Alternar Tema
+  </button>
+
+  <style>
+    /* Estilos customizados para inputs e botões */
+    .input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #c084fc; /* purple-400 */
+      border-radius: 0.5rem; /* rounded-lg */
+      background-color: white;
+      color: black;
+      font-size: 1rem;
+    }
+    .dark .input {
+      background-color: #374151; /* gray-700 */
+      color: white;
+      border-color: #4b5563; /* gray-600 */
+    }
+    .input:focus {
+      outline: none;
+      border-color: #8b5cf6; /* purple-500 */
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+    }
+    .btn-purple {
+      background-color: #8b5cf6; /* purple-500 */
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: background-color 0.2s, transform 0.2s;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .btn-purple:hover {
+      background-color: #7c3aed; /* purple-600 */
+      transform: translateY(-1px);
+    }
+    .dark .btn-purple {
+      background-color: #c084fc; /* purple-400 */
+      color: #3b0764; /* purple-950 */
+    }
+    .dark .btn-purple:hover {
+      background-color: #a855f7; /* purple-500 */
+      color: white;
+    }
+    .btn-outline-purple {
+      background-color: transparent;
+      color: #8b5cf6; /* purple-500 */
+      border: 2px solid #8b5cf6;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: all 0.2s;
+      font-weight: 600;
+      width: 100%; /* Ocupa a largura total */
+      text-align: center; /* Centraliza o texto */
+    }
+    .btn-outline-purple:hover {
+      background-color: #ede9fe; /* purple-50 */
+      color: #7c3aed; /* purple-600 */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .dark .btn-outline-purple {
+      color: #c084fc; /* purple-400 */
+      border-color: #c084fc;
+    }
+    .dark .btn-outline-purple:hover {
+      background-color: #581c87; /* purple-900 */
+      color: white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+    .cell {
+      padding: 0.75rem;
+      border: 1px solid #d8b4fe; /* purple-300 */
+      text-align: left;
+    }
+    .dark .cell {
+      border-color: #6b21a8; /* purple-700 */
+    }
+  </style>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+  <meta charset="UTF-8">
+  <title>Tema Teste</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class'
+    };
+  </script>
+</head>
+<body class="bg-white dark:bg-black text-black dark:text-white p-6">
+  <h1 class="text-3xl font-bold">🌓 Tema Teste</h1>
+  <p class="mb-4">Clique no botão abaixo para alternar entre claro e escuro.</p>
+  <button onclick="alternarTema()" class="bg-gray-800 text-white px-4 py-2 rounded dark:bg-white dark:text-black">
+    Alternar Tema
+  </button>
+
+  <script>
+    function alternarTema() {
+      const html = document.documentElement;
+      html.classList.toggle('dark');
+      const modo = html.classList.contains('dark') ? 'dark' : 'light';
+      localStorage.setItem('temaPreferido', modo);
+    }
+
+    (function () {
+      const tema = localStorage.getItem('temaPreferido');
+      if (tema === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+</body>
+</html>

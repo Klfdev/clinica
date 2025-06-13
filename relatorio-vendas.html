@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Relatório de Vendas - PetClínica São Lázaro</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU",
+      authDomain: "petclinica-e4bc5.firebaseapp.com",
+      projectId: "petclinica-e4bc5",
+      storageBucket: "petclinica-e4bc5.appspot.com",
+      messagingSenderId: "860007352252",
+      appId: "1:860007352252:web:7180c7d607965a062e0db9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+  </script>
+</head>
+<body class="bg-purple-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen p-6 transition-all">
+  <div class="max-w-6xl mx-auto bg-white dark:bg-gray-800 rounded shadow p-6 space-y-8">
+    <h1 class="text-2xl font-bold text-purple-700 dark:text-purple-300">📋 Relatório de Vendas</h1>
+
+    <form onsubmit="adicionarItem(event)" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <select id="statusRelatorio" required class="input col-span-1 md:col-span-4">
+        <option value="Orçamento">🟢 Orçamento</option>
+        <option value="Em Atendimento">🟡 Em Atendimento</option>
+        <option value="Em Aberto">🔵 Em Aberto</option>
+        <option value="Relatório Detalhado">📄 Relatório Detalhado</option>
+        <option value="Resumo">📊 Resumo</option>
+        <option value="Forma de Pagamento">💳 Forma de Pagamento</option>
+      </select>
+      <input id="codigo" placeholder="Cód. Produto / Serviço" required class="input" />
+      <input id="animal" placeholder="Animal" required class="input" />
+      <input id="funcionario" placeholder="Funcionário" required class="input" />
+      <input id="valorUnitario" placeholder="Valor Unit." type="number" step="0.01" required class="input" />
+      <input id="quantidade" placeholder="Qtd." type="number" step="1" required class="input" />
+      <input id="desconto" placeholder="Desconto" type="number" step="0.01" class="input" />
+      <input id="valorLiquido" placeholder="Valor Líquido" type="number" step="0.01" required class="input" />
+      <button type="submit" class="btn-purple col-span-1 md:col-span-4">Adicionar ao Relatório</button>
+    </form>
+
+    <table class="w-full text-left border border-purple-300">
+      <thead class="bg-purple-200 dark:bg-purple-800">
+        <tr>
+          <th class="cell">Cód.</th>
+          <th class="cell">Animal</th>
+          <th class="cell">Funcionário</th>
+          <th class="cell">Unit.</th>
+          <th class="cell">Qtd.</th>
+          <th class="cell">Desc.</th>
+          <th class="cell">Líquido</th>
+          <th class="cell">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="tabela-itens" class="bg-white dark:bg-gray-700 dark:text-white"></tbody>
+    </table>
+
+    <button onclick="gerarPDF()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-800 mt-4">📄 Gerar PDF</button>
+  </div>
+
+  <script>
+    let relatorio = [];
+
+    auth.onAuthStateChanged(user => {
+      if (!user) {
+        alert('Acesso negado. Faça login.');
+        window.location.href = 'login.html';
+      } else {
+        carregarItensSalvos();
+      }
+    });
+
+    function adicionarItem(event) {
+      event.preventDefault();
+      const status = document.getElementById('statusRelatorio').value;
+      const item = {
+        status,
+        codigo: document.getElementById('codigo').value,
+        animal: document.getElementById('animal').value,
+        funcionario: document.getElementById('funcionario').value,
+        valorUnitario: parseFloat(document.getElementById('valorUnitario').value),
+        quantidade: parseInt(document.getElementById('quantidade').value),
+        desconto: parseFloat(document.getElementById('desconto').value) || 0,
+        valorLiquido: parseFloat(document.getElementById('valorLiquido').value),
+        data: new Date().toISOString()
+      };
+
+      db.collection("relatorios").add(item).then(() => {
+        relatorio.push(item);
+        renderTabela();
+        event.target.reset();
+      });
+    }
+
+    function carregarItensSalvos() {
+      db.collection("relatorios").orderBy("data", "desc").limit(10).get().then(snapshot => {
+        relatorio = snapshot.docs.map(doc => doc.data());
+        renderTabela();
+      });
+    }
+
+    function renderTabela() {
+      const tabela = document.getElementById('tabela-itens');
+      tabela.innerHTML = '';
+      relatorio.forEach((item, i) => {
+        const row = tabela.insertRow();
+        row.innerHTML = `
+          <td class="cell">${item.codigo}</td>
+          <td class="cell">${item.animal}</td>
+          <td class="cell">${item.funcionario}</td>
+          <td class="cell">R$ ${item.valorUnitario.toFixed(2)}</td>
+          <td class="cell">${item.quantidade}</td>
+          <td class="cell">R$ ${item.desconto.toFixed(2)}</td>
+          <td class="cell">R$ ${item.valorLiquido.toFixed(2)}</td>
+          <td class="cell"><button onclick="removerItem(${i})" class="bg-red-600 text-white px-2 py-1 rounded">Remover</button></td>
+        `;
+      });
+    }
+
+    function removerItem(index) {
+      relatorio.splice(index, 1);
+      renderTabela();
+    }
+
+    async function gerarPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const dataAtual = new Date().toLocaleString();
+
+      doc.setFontSize(16);
+      doc.setTextColor(124, 58, 237);
+      doc.text("PetClínica São Lázaro", 20, 20);
+      doc.setFontSize(11);
+      doc.text("R. Imirim, 396 - Vila Pérola, Contagem - MG, 32110-070", 20, 28);
+      doc.text("Telefone: (31) 3357-6649", 20, 34);
+      doc.setTextColor(0, 0, 0);
+      doc.line(20, 38, 190, 38);
+      doc.setFontSize(10);
+      doc.text(`Emitido em: ${dataAtual}`, 20, 44);
+
+      let y = 52;
+
+      relatorio.forEach((item, i) => {
+        doc.setFontSize(12);
+        doc.setTextColor(124, 58, 237);
+        doc.text(`${item.status}`, 20, y);
+        y += 8;
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.text(`${i + 1}. ${item.codigo} | ${item.animal} | ${item.funcionario}`, 20, y);
+        y += 6;
+        doc.text(`Unit: R$ ${item.valorUnitario.toFixed(2)} | Qtd: ${item.quantidade} | Desc: R$ ${item.desconto.toFixed(2)} | Líquido: R$ ${item.valorLiquido.toFixed(2)}`, 20, y);
+        y += 10;
+
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+      });
+
+      doc.save("relatorio-vendas.pdf");
+    }
+  </script>
+
+  <style>
+    .input {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #c084fc;
+      border-radius: 0.375rem;
+      background-color: white;
+      color: black;
+    }
+    .dark .input {
+      background-color: #374151;
+      color: white;
+      border-color: #4b5563;
+    }
+    .btn-purple {
+      background-color: #7c3aed;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+    }
+    .btn-purple:hover {
+      background-color: #6b21a8;
+    }
+    .cell {
+      padding: 0.5rem;
+      border: 1px solid #c084fc;
+    }
+    .dark .cell {
+      border-color: #4b5563;
+    }
+  </style>
+</body>
+</html>

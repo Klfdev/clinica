@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Financeiro - PetClínica São Lázaro</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class' }</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
+      authDomain: "petclinica-e4bc5.firebaseapp.com",
+      projectId: "petclinica-e4bc5",
+      storageBucket: "petclinica-e4bc5.appspot.com",
+      messagingSenderId: "860007352252",
+      appId: "1:860007352252:web:7180c7d607965a062e0db9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // ----------------------------------------------------
+    // FUNÇÕES DE UI E TEMA
+    // ----------------------------------------------------
+
+    let isDarkMode = localStorage.getItem('theme') === 'dark';
+    document.documentElement.classList.toggle('dark', isDarkMode);
+
+    function alternarTema() {
+      isDarkMode = !isDarkMode;
+      document.documentElement.classList.toggle('dark', isDarkMode);
+      if (isDarkMode) {
+        localStorage.setItem('theme', 'dark');
+      } else {
+        localStorage.removeItem('theme');
+      }
+    }
+
+    function logout() {
+      auth.signOut().then(() => {
+        window.location.href = 'login.html';
+      }).catch((error) => {
+        console.error("Erro ao fazer logout:", error);
+        alert("Ocorreu um erro ao sair. Tente novamente.");
+      });
+    }
+
+    // ----------------------------------------------------
+    // VERIFICAÇÃO DE AUTENTICAÇÃO E CARREGAMENTO DE DADOS
+    // ----------------------------------------------------
+    auth.onAuthStateChanged(user => {
+      if (!user) {
+        alert('Acesso não autorizado. Faça login primeiro.');
+        window.location.href = 'login.html';
+      } else {
+        carregarLancamentos(); // Carrega os dados financeiros se o usuário estiver logado
+      }
+    });
+
+    // ----------------------------------------------------
+    // LÓGICA FINANCEIRA
+    // ----------------------------------------------------
+    let chartInstance; // Variável para armazenar a instância do Chart.js
+
+    async function adicionarLancamento(event) {
+      event.preventDefault();
+      const tipo = document.getElementById('tipo').value;
+      const descricao = document.getElementById('descricao').value;
+      const valor = parseFloat(document.getElementById('valor').value);
+      const data = document.getElementById('data').value;
+
+      if (!tipo || !descricao || isNaN(valor) || valor <= 0 || !data) {
+        alert('Por favor, preencha todos os campos corretamente (valor > 0).');
+        return;
+      }
+
+      try {
+        await db.collection("financeiro").add({
+          tipo,
+          descricao,
+          valor,
+          data,
+          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        alert('Lançamento adicionado com sucesso!');
+        document.getElementById('form-lancamento').reset();
+        carregarLancamentos(); // Recarrega a tabela e o gráfico
+      } catch (error) {
+        console.error("Erro ao adicionar lançamento:", error);
+        alert('Erro ao adicionar lançamento. Verifique o console.');
+      }
+    }
+
+    async function carregarLancamentos() {
+      const tabelaCorpo = document.getElementById('tabela-lancamentos');
+      tabelaCorpo.innerHTML = ''; // Limpa a tabela
+      
+      let totalEntradas = 0;
+      let totalSaidas = 0;
+      const meses = {}; // Para o gráfico
+
+      try {
+        const snapshot = await db.collection("financeiro").orderBy("data", "desc").get();
+        if (snapshot.empty) {
+          tabelaCorpo.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum lançamento financeiro registrado ainda.</td></tr>';
+          atualizarGrafico(meses); // Atualiza o gráfico mesmo vazio
+          return;
+        }
+
+        snapshot.forEach(doc => {
+          const l = doc.data();
+          const linha = tabelaCorpo.insertRow();
+          linha.className = 'border-b border-purple-200 dark:border-purple-700';
+
+          const tipoClass = l.tipo === 'entrada' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+          const icon = l.tipo === 'entrada' ? '⬆️' : '⬇️';
+
+          linha.innerHTML = `
+            <td class="cell ${tipoClass}">${icon} ${l.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoLancamento('${doc.id}', 'descricao', this.textContent)">${l.descricao}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoLancamento('${doc.id}', 'valor', this.textContent)">R$ ${l.valor.toFixed(2).replace('.', ',')}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoLancamento('${doc.id}', 'data', this.textContent)">${l.data}</td>
+            <td class="cell">
+              <button onclick="removerLancamento('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors">Remover</button>
+            </td>
+          `;
+
+          // Agrega dados para o gráfico
+          const mesAno = l.data.substring(0, 7); // Ex: "YYYY-MM"
+          if (!meses[mesAno]) {
+            meses[mesAno] = { entrada: 0, saida: 0 };
+          }
+          if (l.tipo === 'entrada') {
+            meses[mesAno].entrada += l.valor;
+            totalEntradas += l.valor;
+          } else {
+            meses[mesAno].saida += l.valor;
+            totalSaidas += l.valor;
+          }
+        });
+
+        // Atualiza os totais
+        document.getElementById('total-entradas-financeiro').textContent = `R$ ${totalEntradas.toFixed(2).replace('.', ',')}`;
+        document.getElementById('total-saidas-financeiro').textContent = `R$ ${totalSaidas.toFixed(2).replace('.', ',')}`;
+        const saldoTotal = totalEntradas - totalSaidas;
+        const saldoElement = document.getElementById('saldo-total-financeiro');
+        saldoElement.textContent = `R$ ${saldoTotal.toFixed(2).replace('.', ',')}`;
+        saldoElement.classList.remove('text-green-600', 'text-red-600', 'dark:text-green-400', 'dark:text-red-400');
+        if (saldoTotal >= 0) {
+          saldoElement.classList.add('text-green-600', 'dark:text-green-400');
+        } else {
+          saldoElement.classList.add('text-red-600', 'dark:text-red-400');
+        }
+
+        atualizarGrafico(meses); // Atualiza o gráfico com os dados carregados
+      } catch (error) {
+        console.error("Erro ao carregar lançamentos:", error);
+        tabelaCorpo.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500 dark:text-red-400">Erro ao carregar lançamentos.</td></tr>';
+        atualizarGrafico({}); // Limpa o gráfico em caso de erro
+      }
+    }
+
+    async function editarCampoLancamento(id, campo, valor) {
+      try {
+        const atualizar = {};
+        if (campo === 'valor') {
+          const numValor = parseFloat(valor.replace('R$', '').replace(',', '.').trim());
+          if (isNaN(numValor) || numValor < 0) {
+            alert('Valor deve ser um número não negativo.');
+            carregarLancamentos(); // Recarrega para restaurar o valor original
+            return;
+          }
+          atualizar[campo] = numValor;
+        } else {
+          atualizar[campo] = valor.trim();
+        }
+        await db.collection("financeiro").doc(id).update(atualizar);
+        console.log(`Campo ${campo} do lançamento ${id} atualizado para ${valor.trim()}`);
+        carregarLancamentos(); // Recarrega para atualizar totais e gráfico
+      } catch (error) {
+        console.error("Erro ao editar campo:", error);
+        alert('Erro ao editar campo. Verifique o console.');
+      }
+    }
+
+    async function removerLancamento(id) {
+      if (confirm('Tem certeza que deseja remover este lançamento?')) {
+        try {
+          await db.collection("financeiro").doc(id).delete();
+          alert('Lançamento removido com sucesso!');
+          carregarLancamentos(); // Recarrega a tabela e o gráfico
+        } catch (error) {
+          console.error("Erro ao remover lançamento:", error);
+          alert('Erro ao remover lançamento. Verifique o console.');
+        }
+      }
+    }
+
+    function atualizarGrafico(meses) {
+      const labels = Object.keys(meses).sort();
+      const entradas = labels.map(m => meses[m].entrada);
+      const saidas = labels.map(m => meses[m].saida);
+
+      const ctx = document.getElementById('graficoFinanceiro').getContext('2d');
+      if (chartInstance) chartInstance.destroy(); // Destroi o gráfico anterior
+
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { 
+              label: 'Entradas', 
+              data: entradas, 
+              backgroundColor: isDarkMode ? '#22c55e' : '#10b981', // green-500 / emerald-500
+              borderColor: isDarkMode ? '#15803d' : '#059669',
+              borderWidth: 1
+            },
+            { 
+              label: 'Saídas', 
+              data: saidas, 
+              backgroundColor: isDarkMode ? '#ef4444' : '#f87171', // red-500 / red-400
+              borderColor: isDarkMode ? '#b91c1c' : '#ef4444',
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { 
+                position: 'top',
+                labels: {
+                    color: isDarkMode ? 'white' : 'black' // Cor da legenda no modo escuro
+                }
+            },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            label += 'R$ ' + new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(context.parsed.y);
+                        }
+                        return label;
+                    }
+                }
+            }
+          },
+          scales: { 
+            x: { 
+                stacked: true, 
+                ticks: { color: isDarkMode ? 'white' : 'black' },
+                grid: { color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
+            },
+            y: { 
+                stacked: true, 
+                beginAtZero: true, 
+                ticks: { color: isDarkMode ? 'white' : 'black' },
+                grid: { color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
+            }
+          }
+        }
+      });
+    }
+
+    async function exportarPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("Relatório Financeiro - PetClínica São Lázaro", 105, 20, null, null, "center");
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("Gerado em: " + new Date().toLocaleDateString('pt-BR'), 105, 30, null, null, "center");
+
+      const head = [['Tipo', 'Descrição', 'Valor (R$)', 'Data']];
+      const body = [];
+      const snapshot = await db.collection("financeiro").orderBy("data", "desc").get();
+      
+      let totalEntradasPDF = 0;
+      let totalSaidasPDF = 0;
+
+      snapshot.forEach(doc => {
+        const l = doc.data();
+        body.push([
+          l.tipo === 'entrada' ? 'Entrada' : 'Saída',
+          l.descricao,
+          `R$ ${l.valor.toFixed(2).replace('.', ',')}`,
+          l.data
+        ]);
+        if (l.tipo === 'entrada') {
+            totalEntradasPDF += l.valor;
+        } else {
+            totalSaidasPDF += l.valor;
+        }
+      });
+
+      doc.autoTable({
+        startY: 45,
+        head: head,
+        body: body,
+        theme: 'striped',
+        headStyles: { fillColor: [139, 92, 246] }, // purple-500
+        styles: { fontSize: 9, cellPadding: 2 },
+        columnStyles: {
+          0: { cellWidth: 30 },
+          1: { cellWidth: 70 },
+          2: { cellWidth: 30, halign: 'right' },
+          3: { cellWidth: 30 }
+        },
+        didDrawPage: function (data) {
+          let str = "Página " + doc.internal.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.text(str, data.settings.margin.left, doc.internal.pageSize.height - 10);
+        }
+      });
+
+      // Adiciona totais ao final do PDF
+      let finalY = doc.autoTable.previous.finalY + 10;
+      doc.setFontSize(10);
+      doc.text(`Total Entradas: R$ ${totalEntradasPDF.toFixed(2).replace('.', ',')}`, 20, finalY);
+      doc.text(`Total Saídas: R$ ${totalSaidasPDF.toFixed(2).replace('.', ',')}`, 20, finalY + 7);
+      doc.text(`Saldo Total: R$ ${(totalEntradasPDF - totalSaidasPDF).toFixed(2).replace('.', ',')}`, 20, finalY + 14);
+
+      doc.save("relatorio_financeiro.pdf");
+    }
+  </script>
+</head>
+<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-white font-sans antialiased">
+  <header class="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-md">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-3xl font-extrabold tracking-tight">Gerenciar Financeiro</h1>
+      <nav class="flex space-x-6 items-center">
+        <a href="index.html" class="hover:text-purple-200 transition duration-300">Dashboard</a>
+        <a href="admin.html" class="hover:text-purple-200 transition duration-300">Painel Administrativo</a>
+        <button onclick="logout()" class="bg-white text-purple-800 px-4 py-2 rounded-full font-semibold shadow-sm hover:bg-purple-100 transition duration-300 transform hover:scale-105">Sair</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container mx-auto p-8">
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Adicionar Novo Lançamento</h2>
+      <form id="form-lancamento" onsubmit="adicionarLancamento(event)" class="space-y-4">
+        <div>
+          <label for="tipo" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Tipo:</label>
+          <select id="tipo" class="input" required>
+            <option value="">Selecione...</option>
+            <option value="entrada">Entrada</option>
+            <option value="saida">Saída</option>
+          </select>
+        </div>
+        <div>
+          <label for="descricao" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Descrição:</label>
+          <input type="text" id="descricao" class="input" placeholder="Ex: Venda de ração, Pagamento de aluguel" required>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label for="valor" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Valor (R$):</label>
+            <input type="number" id="valor" class="input" step="0.01" min="0.01" required>
+          </div>
+          <div>
+            <label for="data" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Data:</label>
+            <input type="date" id="data" class="input" required>
+          </div>
+        </div>
+        <button type="submit" class="btn-purple">Adicionar Lançamento</button>
+      </form>
+    </section>
+
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Resumo Financeiro Total</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center text-lg font-semibold">
+        <div class="bg-green-50 dark:bg-green-900 p-4 rounded-lg shadow-sm">
+          <p class="text-green-800 dark:text-green-200">Total Entradas:</p>
+          <span id="total-entradas-financeiro" class="text-green-600 dark:text-green-400 text-xl font-bold">R$ 0,00</span>
+        </div>
+        <div class="bg-red-50 dark:bg-red-900 p-4 rounded-lg shadow-sm">
+          <p class="text-red-800 dark:text-red-200">Total Saídas:</p>
+          <span id="total-saidas-financeiro" class="text-red-600 dark:text-red-400 text-xl font-bold">R$ 0,00</span>
+        </div>
+        <div class="bg-purple-50 dark:bg-purple-900 p-4 rounded-lg shadow-sm">
+          <p class="text-purple-800 dark:text-purple-200">Saldo Total:</p>
+          <span id="saldo-total-financeiro" class="text-purple-600 dark:text-purple-400 text-xl font-bold">R$ 0,00</span>
+        </div>
+      </div>
+      <div class="h-80 mt-6"> <canvas id="graficoFinanceiro"></canvas>
+      </div>
+      <button onclick="exportarPDF()" class="btn-outline-purple mt-6">Exportar Relatório Financeiro para PDF</button>
+    </section>
+
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Histórico de Lançamentos</h2>
+      <table class="w-full text-left border border-purple-300 dark:border-purple-600 rounded-lg overflow-hidden">
+        <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200">
+          <tr>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Tipo</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Descrição</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Valor</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Data</th>
+            <th class="p-3 border border-purple-300 dark:border-purple-600">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tabela-lancamentos" class="bg-white dark:bg-gray-700 dark:text-white">
+          </tbody>
+      </table>
+    </section>
+  </main>
+
+  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
+    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+    Alternar Tema
+  </button>
+
+  <style>
+    /* Estilos customizados para inputs e botões */
+    .input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #c084fc; /* purple-400 */
+      border-radius: 0.5rem; /* rounded-lg */
+      background-color: white;
+      color: black;
+      font-size: 1rem;
+    }
+    .dark .input {
+      background-color: #374151; /* gray-700 */
+      color: white;
+      border-color: #4b5563; /* gray-600 */
+    }
+    .input:focus {
+      outline: none;
+      border-color: #8b5cf6; /* purple-500 */
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+    }
+    .btn-purple {
+      background-color: #8b5cf6; /* purple-500 */
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: background-color 0.2s, transform 0.2s;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .btn-purple:hover {
+      background-color: #7c3aed; /* purple-600 */
+      transform: translateY(-1px);
+    }
+    .dark .btn-purple {
+      background-color: #c084fc; /* purple-400 */
+      color: #3b0764; /* purple-950 */
+    }
+    .dark .btn-purple:hover {
+      background-color: #a855f7; /* purple-500 */
+      color: white;
+    }
+    .btn-outline-purple {
+      background-color: transparent;
+      color: #8b5cf6; /* purple-500 */
+      border: 2px solid #8b5cf6;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: all 0.2s;
+      font-weight: 600;
+      width: 100%; /* Ocupa a largura total */
+      text-align: center; /* Centraliza o texto */
+    }
+    .btn-outline-purple:hover {
+      background-color: #ede9fe; /* purple-50 */
+      color: #7c3aed; /* purple-600 */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .dark .btn-outline-purple {
+      color: #c084fc; /* purple-400 */
+      border-color: #c084fc;
+    }
+    .dark .btn-outline-purple:hover {
+      background-color: #581c87; /* purple-900 */
+      color: white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+    .cell {
+      padding: 0.75rem;
+      border: 1px solid #d8b4fe; /* purple-300 */
+      text-align: left;
+    }
+    .dark .cell {
+      border-color: #6b21a8; /* purple-700 */
+    }
+  </style>
+</body>
+</html>

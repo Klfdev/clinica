@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prontuário e Exames - PetClínica São Lázaro</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class' };</script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
+      authDomain: "petclinica-e4bc5.firebaseapp.com",
+      projectId: "petclinica-e4bc5",
+      storageBucket: "petclinica-e4bc5.appspot.com",
+      messagingSenderId: "860007352252",
+      appId: "1:860007352252:web:7180c7d607965a062e0db9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // ----------------------------------------------------
+    // FUNÇÕES DE UI E TEMA
+    // ----------------------------------------------------
+
+    let isDarkMode = localStorage.getItem('theme') === 'dark';
+    document.documentElement.classList.toggle('dark', isDarkMode);
+
+    function alternarTema() {
+      isDarkMode = !isDarkMode;
+      document.documentElement.classList.toggle('dark', isDarkMode);
+      if (isDarkMode) {
+        localStorage.setItem('theme', 'dark');
+      } else {
+        localStorage.removeItem('theme');
+      }
+    }
+
+    function logout() {
+      auth.signOut().then(() => {
+        window.location.href = 'login.html';
+      }).catch((error) => {
+        console.error("Erro ao fazer logout:", error);
+        alert("Ocorreu um erro ao sair. Tente novamente.");
+      });
+    }
+
+    // ----------------------------------------------------
+    // VERIFICAÇÃO DE AUTENTICAÇÃO E CARREGAMENTO DE DADOS
+    // ----------------------------------------------------
+    auth.onAuthStateChanged(user => {
+      if (!user) {
+        alert('Acesso não autorizado. Faça login primeiro.');
+        window.location.href = 'login.html';
+      } else {
+        carregarProntuarios(); // Carrega os prontuários se o usuário estiver logado
+      }
+    });
+
+    // ----------------------------------------------------
+    // LÓGICA DE PRONTUÁRIOS E EXAMES
+    // ----------------------------------------------------
+
+    async function adicionarProntuario(event) {
+      event.preventDefault();
+      const nomePet = document.getElementById('nome-pet-p').value;
+      const data = document.getElementById('data-p').value;
+      const tipoAtendimento = document.getElementById('tipo-atendimento').value;
+      const diagnostico = document.getElementById('diagnostico').value;
+      const tratamento = document.getElementById('tratamento').value;
+      const exames = document.getElementById('exames').value;
+      const observacoes = document.getElementById('observacoes').value;
+
+      if (!nomePet || !data || !tipoAtendimento || !diagnostico || !tratamento) {
+        alert('Por favor, preencha os campos obrigatórios: Pet, Data, Tipo de Atendimento, Diagnóstico e Tratamento.');
+        return;
+      }
+
+      try {
+        await db.collection("prontuarios").add({
+          nomePet,
+          data,
+          tipoAtendimento,
+          diagnostico,
+          tratamento,
+          exames: exames || null,
+          observacoes: observacoes || null,
+          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        alert('Prontuário adicionado com sucesso!');
+        document.getElementById('form-prontuario').reset();
+        carregarProntuarios(); // Recarrega a tabela
+      } catch (error) {
+        console.error("Erro ao adicionar prontuário:", error);
+        alert('Erro ao adicionar prontuário. Verifique o console.');
+      }
+    }
+
+    async function carregarProntuarios() {
+      const tabelaCorpo = document.getElementById('tabela-prontuarios');
+      tabelaCorpo.innerHTML = ''; // Limpa a tabela
+
+      try {
+        const snapshot = await db.collection("prontuarios").orderBy("data", "desc").get();
+        if (snapshot.empty) {
+          tabelaCorpo.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum prontuário registrado ainda.</td></tr>';
+          return;
+        }
+
+        snapshot.forEach(doc => {
+          const p = doc.data();
+          const linha = tabelaCorpo.insertRow();
+          linha.className = 'border-b border-purple-200 dark:border-purple-700';
+          linha.innerHTML = `
+            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'nomePet', this.textContent)">${p.nomePet}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'data', this.textContent)">${p.data}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'tipoAtendimento', this.textContent)">${p.tipoAtendimento}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'diagnostico', this.textContent)">${p.diagnostico}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'tratamento', this.textContent)">${p.tratamento}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'exames', this.textContent)">${p.exames || '-'}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'observacoes', this.textContent)">${p.observacoes || '-'}</td>
+            <td class="cell">
+              <button onclick="removerProntuario('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors">Remover</button>
+            </td>
+          `;
+        });
+      } catch (error) {
+        console.error("Erro ao carregar prontuários:", error);
+        tabelaCorpo.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-red-500 dark:text-red-400">Erro ao carregar prontuários.</td></tr>';
+      }
+    }
+
+    async function editarCampoProntuario(id, campo, valor) {
+      try {
+        const atualizar = {};
+        atualizar[campo] = valor.trim();
+        await db.collection("prontuarios").doc(id).update(atualizar);
+        console.log(`Campo ${campo} do prontuário ${id} atualizado para ${valor.trim()}`);
+      } catch (error) {
+        console.error("Erro ao editar campo:", error);
+        alert('Erro ao editar campo. Verifique o console.');
+      }
+    }
+
+    async function removerProntuario(id) {
+      if (confirm('Tem certeza que deseja remover este prontuário?')) {
+        try {
+          await db.collection("prontuarios").doc(id).delete();
+          alert('Prontuário removido com sucesso!');
+          carregarProntuarios(); // Recarrega a tabela
+        } catch (error) {
+          console.error("Erro ao remover prontuário:", error);
+          alert('Erro ao remover prontuário. Verifique o console.');
+        }
+      }
+    }
+
+    function gerarReceitaPDF(event) {
+      event.preventDefault();
+      const nomePet = document.getElementById('r-nome-pet').value;
+      const data = document.getElementById('r-data').value;
+      const atendimento = document.getElementById('r-atendimento').value;
+      const observacoes = document.getElementById('r-observacoes').value;
+
+      if (!nomePet || !data || !atendimento || !observacoes) {
+        alert('Por favor, preencha todos os campos da receita para gerar o PDF.');
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("PetClínica São Lázaro - Receita Médica", 105, 20, null, null, "center");
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("Endereço: R. Imirim, 396 - Vila Pérola, Contagem - MG, 32110-070", 105, 28, null, null, "center");
+      doc.text("Telefone: (31) 3357-6649", 105, 34, null, null, "center");
+
+      doc.setFontSize(12);
+      doc.text(`Nome do Pet: ${nomePet}`, 20, 50);
+      doc.text(`Data: ${data}`, 20, 57);
+      doc.text(`Atendimento: ${atendimento}`, 20, 64);
+      
+      doc.setFontSize(14);
+      doc.text("Observações/Prescrição:", 20, 75);
+      
+      doc.setFontSize(12);
+      // Adiciona o texto das observações com quebra de linha automática
+      const splitText = doc.splitTextToSize(observacoes, 170); // 170mm de largura máxima
+      doc.text(splitText, 20, 85);
+
+      // Assinatura e Data no final da página (simulado)
+      const pageHeight = doc.internal.pageSize.height;
+      doc.text("___________________________________", 105, pageHeight - 30, null, null, "center");
+      doc.text("Assinatura do Veterinário", 105, pageHeight - 25, null, null, "center");
+      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 105, pageHeight - 15, null, null, "center");
+
+      doc.save(`receita-${nomePet}-${data}.pdf`);
+      event.target.reset(); // Limpa o formulário após gerar o PDF
+    }
+  </script>
+</head>
+<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-white font-sans antialiased">
+  <header class="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-md">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-3xl font-extrabold tracking-tight">Prontuário e Exames</h1>
+      <nav class="flex space-x-6 items-center">
+        <a href="index.html" class="hover:text-purple-200 transition duration-300">Dashboard</a>
+        <a href="admin.html" class="hover:text-purple-200 transition duration-300">Painel Administrativo</a>
+        <button onclick="logout()" class="bg-white text-purple-800 px-4 py-2 rounded-full font-semibold shadow-sm hover:bg-purple-100 transition duration-300 transform hover:scale-105">Sair</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container mx-auto p-8">
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Registrar Novo Prontuário</h2>
+      <form id="form-prontuario" onsubmit="adicionarProntuario(event)" class="space-y-4">
+        <div>
+          <label for="nome-pet-p" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nome do Pet:</label>
+          <input type="text" id="nome-pet-p" class="input" placeholder="Nome do pet" required>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label for="data-p" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Data do Atendimento:</label>
+            <input type="date" id="data-p" class="input" required>
+          </div>
+          <div>
+            <label for="tipo-atendimento" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Tipo de Atendimento:</label>
+            <input type="text" id="tipo-atendimento" class="input" placeholder="Ex: Consulta, Cirurgia, Vacinação" required>
+          </div>
+        </div>
+        <div>
+          <label for="diagnostico" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Diagnóstico:</label>
+          <textarea id="diagnostico" class="input h-24" placeholder="Diagnóstico do caso" required></textarea>
+        </div>
+        <div>
+          <label for="tratamento" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Tratamento/Medicação:</label>
+          <textarea id="tratamento" class="input h-24" placeholder="Tratamento e medicações prescritas" required></textarea>
+        </div>
+        <div>
+          <label for="exames" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Exames Realizados (Opcional):</label>
+          <textarea id="exames" class="input h-20" placeholder="Resultados de exames, se houver"></textarea>
+        </div>
+        <div>
+          <label for="observacoes" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Observações Adicionais (Opcional):</label>
+          <textarea id="observacoes" class="input h-20" placeholder="Outras observações relevantes"></textarea>
+        </div>
+        <button type="submit" class="btn-purple">Salvar Prontuário</button>
+      </form>
+    </section>
+
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Gerar Receita Médica (PDF)</h2>
+      <form onsubmit="gerarReceitaPDF(event)" class="space-y-4">
+        <div>
+          <label for="r-nome-pet" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nome do Pet:</label>
+          <input type="text" id="r-nome-pet" class="input" placeholder="Nome do pet" required>
+        </div>
+        <div>
+          <label for="r-data" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Data:</label>
+          <input type="date" id="r-data" class="input" required>
+        </div>
+        <div>
+          <label for="r-atendimento" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Tipo de Atendimento:</label>
+          <input type="text" id="r-atendimento" class="input" placeholder="Ex: Consulta, Retorno" required>
+        </div>
+        <div>
+          <label for="r-observacoes" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Prescrição/Observações (Receita):</label>
+          <textarea id="r-observacoes" class="input h-32" placeholder="Descreva a medicação, dosagem e observações para a receita" required></textarea>
+        </div>
+        <button type="submit" class="btn-outline-purple">Gerar Receita em PDF</button>
+      </form>
+    </section>
+
+    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600">
+      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Prontuários Registrados</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border border-purple-300 dark:border-purple-600 rounded-lg overflow-hidden">
+          <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200">
+            <tr>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Pet</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Data</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Tipo Atend.</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Diagnóstico</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Tratamento</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Exames</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Observações</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-prontuarios" class="bg-white dark:bg-gray-700 dark:text-white">
+            </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
+    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+    Alternar Tema
+  </button>
+
+  <style>
+    /* Estilos customizados para inputs e botões */
+    .input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #c084fc; /* purple-400 */
+      border-radius: 0.5rem; /* rounded-lg */
+      background-color: white;
+      color: black;
+      font-size: 1rem;
+    }
+    .dark .input {
+      background-color: #374151; /* gray-700 */
+      color: white;
+      border-color: #4b5563; /* gray-600 */
+    }
+    .input:focus {
+      outline: none;
+      border-color: #8b5cf6; /* purple-500 */
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+    }
+    .btn-purple {
+      background-color: #8b5cf6; /* purple-500 */
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: background-color 0.2s, transform 0.2s;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .btn-purple:hover {
+      background-color: #7c3aed; /* purple-600 */
+      transform: translateY(-1px);
+    }
+    .dark .btn-purple {
+      background-color: #c084fc; /* purple-400 */
+      color: #3b0764; /* purple-950 */
+    }
+    .dark .btn-purple:hover {
+      background-color: #a855f7; /* purple-500 */
+      color: white;
+    }
+    .btn-outline-purple {
+      background-color: transparent;
+      color: #8b5cf6; /* purple-500 */
+      border: 2px solid #8b5cf6;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: all 0.2s;
+      font-weight: 600;
+      width: 100%; /* Ocupa a largura total */
+      text-align: center; /* Centraliza o texto */
+    }
+    .btn-outline-purple:hover {
+      background-color: #ede9fe; /* purple-50 */
+      color: #7c3aed; /* purple-600 */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .dark .btn-outline-purple {
+      color: #c084fc; /* purple-400 */
+      border-color: #c084fc;
+    }
+    .dark .btn-outline-purple:hover {
+      background-color: #581c87; /* purple-900 */
+      color: white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+    .cell {
+      padding: 0.75rem;
+      border: 1px solid #d8b4fe; /* purple-300 */
+      text-align: left;
+    }
+    .dark .cell {
+      border-color: #6b21a8; /* purple-700 */
+    }
+  </style>
+</body>
+</html>
