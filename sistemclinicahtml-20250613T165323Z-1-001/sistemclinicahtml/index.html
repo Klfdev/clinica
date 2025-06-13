@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard - PetClínica São Lázaro</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Poppins', 'sans-serif'], // Aplica Poppins como fonte padrão
+          }
+        }
+      }
+    }
+  </script>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU",
+      authDomain: "petclinica-e4bc5.firebaseapp.com",
+      projectId: "petclinica-e4bc5",
+      storageBucket: "petclinica-e4bc5.appspot.com",
+      messagingSenderId: "860007352252",
+      appId: "1:860007352252:web:7180c7d607965a062e0db9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // Redireciona se não estiver logado
+    document.addEventListener('DOMContentLoaded', () => {
+      auth.onAuthStateChanged(user => {
+        if (!user) {
+          alert('Acesso não autorizado. Faça login primeiro.');
+          window.location.href = 'login.html';
+        } else {
+          carregarLembretes(); // Carrega lembretes após autenticação
+        }
+      });
+    });
+
+    // Função de logout
+    function logout() {
+      auth.signOut().then(() => {
+        sessionStorage.removeItem('logado');
+        window.location.href = 'login.html';
+      }).catch((error) => {
+        console.error("Erro ao fazer logout:", error);
+        alert("Erro ao fazer logout. Tente novamente.");
+      });
+    }
+
+    async function carregarLembretes() {
+      const lista = document.getElementById('lembretes-lista');
+      lista.innerHTML = '';
+      const hoje = new Date();
+      const hojeStr = hoje.toISOString().slice(0, 10);
+      const setedias = new Date(hoje);
+      setedias.setDate(setedias.getDate() + 7);
+
+      const lembretes = [];
+
+      try {
+        // Lembretes de vacinas
+        const vacinasSnap = await db.collection("vacinas").get();
+        vacinasSnap.forEach(doc => {
+          const v = doc.data();
+          // Certifica-se de que 'v.data' é uma string de data válida para comparação
+          if (v.data && v.data >= hojeStr && new Date(v.data) <= setedias) {
+            lembretes.push(`💉 Vacina de <strong>${v.pet}</strong> vence em até 7 dias: ${v.data}`);
+          }
+        });
+
+        // Lembretes de agendamentos
+        const agendSnap = await db.collection("agendamentos").get();
+        agendSnap.forEach(doc => {
+          const ag = doc.data();
+          if (ag.data === hojeStr) {
+            lembretes.push(`📅 Agendamento hoje: <strong>${ag.nomePet}</strong> às ${ag.horario}`);
+          }
+        });
+
+        if (lembretes.length === 0) {
+          lista.innerHTML = `<li class="italic text-gray-500 dark:text-gray-400 p-2">Nenhum lembrete para hoje ou para os próximos 7 dias.</li>`;
+        } else {
+          lembretes.forEach(lembrete => {
+            const li = document.createElement('li');
+            li.className = 'bg-purple-50 dark:bg-gray-800 p-2 rounded-md shadow-sm mb-2 text-sm';
+            li.innerHTML = lembrete;
+            lista.appendChild(li);
+          });
+        }
+      } catch (error) {
+        console.error("Erro ao carregar lembretes:", error);
+        lista.innerHTML = `<li class="text-red-500 italic p-2">Erro ao carregar lembretes.</li>`;
+      }
+    }
+
+    // Função para alternar o tema (claro/escuro)
+    function alternarTema() {
+      document.documentElement.classList.toggle('dark');
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    }
+
+    // Aplica o tema salvo no localStorage ao carregar a página
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    });
+  </script>
+</head>
+<body class="bg-gray-50 text-purple-900 font-sans dark:bg-gray-900 dark:text-white min-h-screen flex flex-col">
+  <header class="bg-purple-700 text-white p-4 shadow-md">
+    <div class="container mx-auto flex flex-col sm:flex-row justify-between items-center">
+      <div class="flex items-center mb-4 sm:mb-0">
+        <img src="image_c5c675.png" alt="PetClínica São Lázaro Logo" class="h-10 mr-3 object-contain">
+        <h1 class="text-2xl font-bold">Painel Administrativo</h1>
+      </div>
+      <nav class="flex flex-wrap justify-center sm:justify-end items-center space-x-4">
+        <a href="index.html" class="hover:underline text-white/90">Dashboard</a>
+        <a href="admin.html" class="hover:underline text-white/90">Administrativo</a>
+        <button onclick="logout()" class="bg-white text-purple-700 px-4 py-2 rounded-full hover:bg-purple-100 transition duration-300 ease-in-out shadow-lg">
+          Sair
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="flex-grow container mx-auto p-6 md:p-8">
+    <section class="mb-8">
+      <h2 class="text-3xl font-bold text-purple-800 dark:text-purple-400 mb-6 text-center">👋 Bem-vindo(a) ao seu Dashboard!</h2>
+      <p class="text-lg text-gray-700 dark:text-gray-300 text-center max-w-2xl mx-auto">Aqui você encontra um resumo rápido e os principais atalhos para gerenciar a PetClínica São Lázaro.</p>
+    </section>
+
+    <section class="mb-10">
+      <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300 mb-6 border-b-2 border-purple-200 dark:border-purple-700 pb-2">Acesso Rápido</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 ease-in-out flex flex-col items-center text-center">
+          <span class="text-5xl mb-4">🐾</span>
+          <h4 class="text-xl font-semibold mb-2 text-purple-800 dark:text-purple-200">Pacientes e Tutores</h4>
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Gerencie os dados de pets e seus responsáveis.</p>
+          <a href="pacientes-tutores.html" class="mt-auto inline-block bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-md">
+            Acessar
+          </a>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 ease-in-out flex flex-col items-center text-center">
+          <span class="text-5xl mb-4">📅</span>
+          <h4 class="text-xl font-semibold mb-2 text-purple-800 dark:text-purple-200">Agendamentos</h4>
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Visualize e gerencie consultas e procedimentos.</p>
+          <a href="agendamentos.html" class="mt-auto inline-block bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-md">
+            Acessar
+          </a>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 ease-in-out flex flex-col items-center text-center">
+          <span class="text-5xl mb-4">📄</span>
+          <h4 class="text-xl font-semibold mb-2 text-purple-800 dark:text-purple-200">Prontuário e Exames</h4>
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Consulte o histórico clínico e exames dos animais.</p>
+          <a href="prontuario.html" class="mt-auto inline-block bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-md">
+            Acessar
+          </a>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 ease-in-out flex flex-col items-center text-center">
+          <span class="text-5xl mb-4">💉</span>
+          <h4 class="text-xl font-semibold mb-2 text-purple-800 dark:text-purple-200">Vacinas</h4>
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Controle de vacinas aplicadas e próximas doses.</p>
+          <a href="controle-vacinas.html" class="mt-auto inline-block bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-md">
+            Acessar
+          </a>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 ease-in-out flex flex-col items-center text-center">
+          <span class="text-5xl mb-4">📦</span>
+          <h4 class="text-xl font-semibold mb-2 text-purple-800 dark:text-purple-200">Estoque</h4>
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Monitore o estoque de medicamentos e materiais.</p>
+          <a href="controle-estoque.html" class="mt-auto inline-block bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-md">
+            Acessar
+          </a>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 ease-in-out flex flex-col items-center text-center">
+          <span class="text-5xl mb-4">💰</span>
+          <h4 class="text-xl font-semibold mb-2 text-purple-800 dark:text-purple-200">Financeiro</h4>
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Acompanhe as movimentações financeiras da clínica.</p>
+          <a href="financeiro.html" class="mt-auto inline-block bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-md">
+            Acessar
+          </a>
+        </div>
+
+         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 ease-in-out flex flex-col items-center text-center">
+          <span class="text-5xl mb-4">📊</span>
+          <h4 class="text-xl font-semibold mb-2 text-purple-800 dark:text-purple-200">Relatórios de Vendas</h4>
+          <p class="text-gray-600 dark:text-gray-400 mb-4">Visualize relatórios detalhados das vendas realizadas.</p>
+          <a href="relatorios.html" class="mt-auto inline-block bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-md">
+            Acessar
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300 mb-6 border-b-2 border-purple-200 dark:border-purple-700 pb-2">Lembretes e Avisos</h3>
+      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+        <ul id="lembretes-lista">
+          <li class="italic text-gray-500 dark:text-gray-400 p-2">Carregando lembretes...</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <button onclick="alternarTema()" class="fixed bottom-4 left-4 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-white dark:text-gray-900 transition duration-300 ease-in-out text-lg">
+    🌓 Tema
+  </button>
+</body>
+</html>

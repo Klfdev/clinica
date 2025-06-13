@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Administrativo - PetClínica São Lázaro</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class' };</script>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script>
+    // Configuração do Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
+      authDomain: "petclinica-e4bc5.firebaseapp.com",
+      projectId: "petclinica-e4bc5",
+      storageBucket: "petclinica-e4bc5.appspot.com",
+      messagingSenderId: "860007352252",
+      appId: "1:860007352252:web:7180c7d607965a062e0db9"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    // Estado do tema (claro/escuro)
+    let isDarkMode = localStorage.getItem('theme') === 'dark';
+    document.documentElement.classList.toggle('dark', isDarkMode);
+
+    function alternarTema() {
+      isDarkMode = !isDarkMode;
+      document.documentElement.classList.toggle('dark', isDarkMode);
+      if (isDarkMode) {
+        localStorage.setItem('theme', 'dark');
+      } else {
+        localStorage.removeItem('theme');
+      }
+    }
+
+    function logout() {
+      auth.signOut().then(() => {
+        window.location.href = 'login.html';
+      }).catch((error) => {
+        console.error("Erro ao fazer logout:", error);
+        alert("Ocorreu um erro ao sair. Tente novamente.");
+      });
+    }
+
+    // Verifica o estado de autenticação ao carregar a página
+    auth.onAuthStateChanged(user => {
+      if (!user) {
+        // Se o usuário não estiver logado, redireciona para a página de login
+        alert('Acesso não autorizado. Faça login primeiro.');
+        window.location.href = 'login.html';
+      }
+    });
+  </script>
+</head>
+<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-white font-sans antialiased">
+  <header class="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-md">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-3xl font-extrabold tracking-tight">Painel Administrativo</h1>
+      <div class="flex space-x-6 items-center">
+        <a href="index.html" class="hover:text-purple-200 transition duration-300">Dashboard</a>
+        <button onclick="logout()" class="bg-white text-purple-800 px-4 py-2 rounded-full font-semibold shadow-sm hover:bg-purple-100 transition duration-300 transform hover:scale-105">Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mx-auto p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 transition-all duration-300 hover:shadow-xl hover:scale-105">
+      <h2 class="text-2xl font-bold mb-3 text-purple-800 dark:text-purple-300">Pacientes e Tutores</h2>
+      <p class="text-gray-700 dark:text-gray-300 mb-4">Gerencie os dados dos pets e seus respectivos tutores.</p>
+      <a href="pacientes-tutores.html" class="btn-primary">Acessar</a>
+    </div>
+
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 transition-all duration-300 hover:shadow-xl hover:scale-105">
+      <h2 class="text-2xl font-bold mb-3 text-purple-800 dark:text-purple-300">Agendamentos</h2>
+      <p class="text-gray-700 dark:text-gray-300 mb-4">Visualize e gerencie os agendamentos de consultas e serviços.</p>
+      <a href="agendamentos.html" class="btn-primary">Acessar</a>
+    </div>
+
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 transition-all duration-300 hover:shadow-xl hover:scale-105">
+      <h2 class="text-2xl font-bold mb-3 text-purple-800 dark:text-purple-300">Relatórios de Vendas</h2>
+      <p class="text-gray-700 dark:text-gray-300 mb-4">Acompanhe as vendas e gere relatórios detalhados.</p>
+      <a href="relatorios.html" class="btn-primary">Acessar</a>
+    </div>
+
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 transition-all duration-300 hover:shadow-xl hover:scale-105">
+      <h2 class="text-2xl font-bold mb-3 text-purple-800 dark:text-purple-300">Prontuário e Exames</h2>
+      <p class="text-gray-700 dark:text-gray-300 mb-4">Consulte o histórico clínico, anexos e exames dos animais.</p>
+      <a href="prontuario.html" class="btn-primary">Acessar</a>
+    </div>
+
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 transition-all duration-300 hover:shadow-xl hover:scale-105">
+      <h2 class="text-2xl font-bold mb-3 text-purple-800 dark:text-purple-300">Vacinas</h2>
+      <p class="text-gray-700 dark:text-gray-300 mb-4">Controle de vacinas aplicadas e próximas doses.</p>
+      <a href="controle-vacinas.html" class="btn-primary">Acessar</a>
+    </div>
+
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 transition-all duration-300 hover:shadow-xl hover:scale-105">
+      <h2 class="text-2xl font-bold mb-3 text-purple-800 dark:text-purple-300">Estoque</h2>
+      <p class="text-gray-700 dark:text-gray-300 mb-4">Monitore o estoque de medicamentos e materiais.</p>
+      <a href="controle-estoque.html" class="btn-primary">Acessar</a>
+    </div>
+
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 transition-all duration-300 hover:shadow-xl hover:scale-105">
+      <h2 class="text-2xl font-bold mb-3 text-purple-800 dark:text-purple-300">Financeiro</h2>
+      <p class="text-gray-700 dark:text-gray-300 mb-4">Acompanhe as movimentações financeiras da clínica.</p>
+      <a href="financeiro.html" class="btn-primary">Acessar</a>
+    </div>
+  </main>
+
+  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
+    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+    Alternar Tema
+  </button>
+
+  <style>
+    .btn-primary {
+      display: inline-block;
+      background-color: #8b5cf6; /* purple-500 */
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      font-weight: 600;
+      transition: all 0.2s ease-in-out;
+      text-decoration: none; /* Remover sublinhado padrão do link */
+      text-align: center;
+    }
+    .btn-primary:hover {
+      background-color: #7c3aed; /* purple-600 */
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .dark .btn-primary {
+      background-color: #c084fc; /* purple-400 */
+      color: #3b0764; /* purple-950 */
+    }
+    .dark .btn-primary:hover {
+      background-color: #a855f7; /* purple-500 */
+      color: white;
+    }
+  </style>
+</body>
+</html>
