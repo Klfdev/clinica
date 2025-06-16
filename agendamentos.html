@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-br" class="">
+<html lang="pt-br" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -13,11 +13,11 @@
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/locales-all.min.js"></script>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script>
     const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // Substitua pela sua chave de API
       authDomain: "petclinica-e4bc5.firebaseapp.com",
       projectId: "petclinica-e4bc5",
       storageBucket: "petclinica-e4bc5.appspot.com",
@@ -28,357 +28,427 @@
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    // ----------------------------------------------------
-    // FUNÇÕES DE UI E TEMA
-    // ----------------------------------------------------
+    let agendamentosCache = []; // Cache para armazenar os dados dos agendamentos
+    let calendarInstance = null; // Variável para armazenar a instância do FullCalendar
 
-    let isDarkMode = localStorage.getItem('theme') === 'dark';
-    document.documentElement.classList.toggle('dark', isDarkMode);
+    async function carregarAgendamentos() {
+      const corpo = document.getElementById('tabela-agendamentos');
+      corpo.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 dark:text-gray-400">Carregando agendamentos...</td></tr>';
+      
+      try {
+        const snapshot = await db.collection("agendamentos").orderBy("data").get();
+        corpo.innerHTML = '';
+        agendamentosCache = []; // Limpa o cache
+        const eventos = [];
 
-    function alternarTema() {
-      isDarkMode = !isDarkMode;
-      document.documentElement.classList.toggle('dark', isDarkMode);
-      if (isDarkMode) {
-        localStorage.setItem('theme', 'dark');
-      } else {
-        localStorage.removeItem('theme');
+        if (snapshot.empty) {
+          corpo.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum agendamento encontrado.</td></tr>';
+          if (calendarInstance) {
+            calendarInstance.setOption('events', []); // Limpa eventos no calendário
+          }
+          return;
+        }
+
+        snapshot.forEach(doc => {
+          const ag = { id: doc.id, ...doc.data() };
+          agendamentosCache.push(ag); // Adiciona ao cache
+          const linha = corpo.insertRow();
+          linha.className = 'border-b border-purple-200 dark:border-gray-700 hover:bg-purple-50 dark:hover:bg-gray-700';
+          linha.innerHTML = `
+            <td class="cell p-2">${ag.data}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampo('${ag.id}', 'horario', this.textContent)">${ag.horario}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampo('${ag.id}', 'nomePet', this.textContent)">${ag.nomePet}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampo('${ag.id}', 'nomeTutor', this.textContent)">${ag.nomeTutor}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampo('${ag.id}', 'telefone', this.textContent)">${ag.telefone}</td>
+            <td class="cell" contenteditable="true" onblur="editarCampo('${ag.id}', 'servico', this.textContent)">${ag.servico}</td>
+            <td class="cell flex flex-wrap gap-2 justify-center py-2">
+              <button onclick="removerAgendamento('${ag.id}')" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition duration-300 ease-in-out">Remover</button>
+              <button onclick="abrirModalAddAgenda('${ag.id}')" class="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition duration-300 ease-in-out">Add Agenda</button>
+            </td>
+          `;
+
+          eventos.push({ title: `${ag.nomePet} (${ag.servico})`, start: ag.data });
+        });
+
+        // Atualiza os eventos do calendário existente
+        if (calendarInstance) {
+          calendarInstance.setOption('events', eventos);
+        } else {
+          // Isso não deve acontecer se o DOMContentLoaded for bem-sucedido
+          console.warn("Instância do calendário não encontrada ao carregar agendamentos. Recarregando.");
+          inicializarFullCalendar(eventos);
+        }
+
+      } catch (error) {
+        console.error("Erro ao carregar agendamentos:", error);
+        corpo.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-red-500 dark:text-red-400">Erro ao carregar agendamentos.</td></tr>';
       }
     }
 
-    function logout() {
-      auth.signOut().then(() => {
-        window.location.href = 'login.html';
-      }).catch((error) => {
-        console.error("Erro ao fazer logout:", error);
-        alert("Ocorreu um erro ao sair. Tente novamente.");
+    function inicializarFullCalendar(eventosIniciais = []) {
+      const calendarEl = document.getElementById('calendar');
+      calendarInstance = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'pt-br',
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listWeek' },
+        events: eventosIniciais,
+        dateClick: info => {
+          document.getElementById('data').value = info.dateStr;
+          document.getElementById('horario').focus();
+        }
       });
+      calendarInstance.render();
     }
 
-    // ----------------------------------------------------
-    // VERIFICAÇÃO DE AUTENTICAÇÃO E CARREGAMENTO DE DADOS
-    // ----------------------------------------------------
-    auth.onAuthStateChanged(user => {
-      if (!user) {
-        alert('Acesso não autorizado. Faça login primeiro.');
-        window.location.href = 'login.html';
-      } else {
-        // Usuário logado, pode carregar os agendamentos e inicializar o calendário
-        carregarAgendamentos(); 
-      }
-    });
 
-    // ----------------------------------------------------
-    // LÓGICA DE AGENDAMENTOS
-    // ----------------------------------------------------
+    function editarCampo(id, campo, valor) {
+      const atualizar = {};
+      atualizar[campo] = valor.trim();
+      db.collection("agendamentos").doc(id).update(atualizar)
+        .then(() => {
+          console.log(`Campo '${campo}' do agendamento ${id} atualizado.`);
+          // Como a edição pode alterar dados que afetam o calendário, é bom recarregá-los
+          carregarAgendamentos(); 
+        })
+        .catch(error => {
+          console.error(`Erro ao atualizar campo '${campo}' do agendamento ${id}:`, error);
+          alert(`Erro ao atualizar campo. Verifique o console para detalhes.`);
+        });
+    }
+
+    function removerAgendamento(id) {
+      if (confirm('Tem certeza que deseja remover este agendamento?')) {
+        db.collection("agendamentos").doc(id).delete()
+          .then(() => {
+            alert('Agendamento removido com sucesso!');
+            carregarAgendamentos(); // Recarrega para atualizar a tabela e o calendário
+          })
+          .catch(error => {
+            console.error("Erro ao remover agendamento:", error);
+            alert('Erro ao remover agendamento. Tente novamente.');
+          });
+      }
+    }
 
     async function adicionarAgendamento(event) {
       event.preventDefault();
-      const nomePet = document.getElementById('nome-pet').value;
-      const servico = document.getElementById('servico').value;
       const data = document.getElementById('data').value;
       const horario = document.getElementById('horario').value;
-      const contato = document.getElementById('contato').value;
+      const nomePet = document.getElementById('nomePet').value.trim();
+      const nomeTutor = document.getElementById('nomeTutor').value.trim();
+      const telefone = document.getElementById('telefone').value.trim();
+      const servico = document.getElementById('servico').value.trim();
 
-      if (!nomePet || !servico || !data || !horario) {
-        alert('Por favor, preencha todos os campos obrigatórios (Pet, Serviço, Data, Horário).');
+      if (!data || !horario || !nomePet || !nomeTutor || !servico) {
+        alert('Por favor, preencha todos os campos obrigatórios.');
         return;
       }
 
       try {
         await db.collection("agendamentos").add({
-          nomePet,
-          servico,
           data,
           horario,
-          contato,
-          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+          nomePet,
+          nomeTutor,
+          telefone,
+          servico,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp() // Adiciona um timestamp de criação
         });
-        alert('Agendamento adicionado com sucesso!');
+        alert('Agendamento salvo com sucesso!');
         document.getElementById('form-agendamento').reset();
-        carregarAgendamentos(); // Recarrega a tabela e o calendário
+        carregarAgendamentos(); // Recarrega para atualizar a tabela e o calendário
       } catch (error) {
         console.error("Erro ao adicionar agendamento:", error);
-        alert('Erro ao adicionar agendamento. Verifique o console.');
+        alert('Erro ao adicionar agendamento. Verifique o console para detalhes.');
       }
     }
 
-    let fullCalendarInstance; // Variável global para armazenar a instância do FullCalendar
+    // --- Funções de Integração com Agenda ---
 
-    async function carregarAgendamentos() {
-      const tabelaAgendamentos = document.getElementById('tabela-agendamentos');
-      const calendarEl = document.getElementById('calendar');
-      tabelaAgendamentos.innerHTML = ''; // Limpa a tabela
+    let currentAgendamentoParaAgenda = null; // Armazena o objeto do agendamento para o modal
 
-      // Destrói a instância anterior do calendário para evitar duplicatas ou problemas
-      if (fullCalendarInstance) {
-        fullCalendarInstance.destroy();
+    function abrirModalAddAgenda(agendamentoId) {
+      currentAgendamentoParaAgenda = agendamentosCache.find(ag => ag.id === agendamentoId);
+      if (currentAgendamentoParaAgenda) {
+        document.getElementById('modal-add-agenda').classList.remove('hidden');
+      } else {
+        alert('Agendamento não encontrado para adicionar à agenda.');
       }
+    }
 
-      const eventos = [];
+    function fecharModalAddAgenda() {
+      document.getElementById('modal-add-agenda').classList.add('hidden');
+      currentAgendamentoParaAgenda = null;
+    }
 
-      try {
-        const snapshot = await db.collection("agendamentos").orderBy("data").get();
-        if (snapshot.empty) {
-          tabelaAgendamentos.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum agendamento registrado ainda.</td></tr>';
+    function adicionarEventoAoGoogleCalendar() {
+      if (!currentAgendamentoParaAgenda) return;
+
+      const ag = currentAgendamentoParaAgenda;
+      const title = encodeURIComponent(`PetClínica: ${ag.nomePet} - ${ag.servico}`);
+      const description = encodeURIComponent(`Agendamento de ${ag.servico} para ${ag.nomePet} (Tutor: ${ag.nomeTutor}). Telefone: ${ag.telefone}.`);
+
+      // Formata a data e hora para o Google Calendar (YYYYMMDDTHHMMSS)
+      // Assumimos que a hora é no fuso horário local e o Firebase armazena a data como 'YYYY-MM-DD' e hora como 'HH:MM'
+      const startDateTime = new Date(`${ag.data}T${ag.horario}`);
+      const endDateTime = new Date(startDateTime);
+      endDateTime.setHours(startDateTime.getHours() + 1); // Adiciona 1 hora de duração (ajustável)
+
+      const formatDate = (date) => {
+        const pad = (num) => num < 10 ? '0' + num : num;
+        return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T` +
+               `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+      };
+
+      const dates = `${formatDate(startDateTime)}/${formatDate(endDateTime)}`;
+
+      const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${description}&dates=${dates}&location=${encodeURIComponent('R. Imirim, 396 - Vila Pérola, Contagem - MG')}`;
+      
+      window.open(googleCalendarUrl, '_blank');
+      fecharModalAddAgenda();
+    }
+
+    function baixarICS() {
+      if (!currentAgendamentoParaAgenda) return;
+
+      const ag = currentAgendamentoParaAgenda;
+      const title = `PetClínica: ${ag.nomePet} - ${ag.servico}`;
+      const description = `Agendamento de ${ag.servico} para ${ag.nomePet} (Tutor: ${ag.nomeTutor}). Telefone: ${ag.telefone}.`;
+      const location = 'PetClínica São Lázaro, R. Imirim, 396 - Vila Pérola, Contagem - MG';
+
+      // Formata a data e hora para iCalendar (YYYYMMDDTHHMMSSZ - UTC)
+      // Melhor converter para UTC para evitar problemas de fuso horário, se possível.
+      // Aqui, vamos assumir que 'ag.data' e 'ag.horario' são no fuso horário local
+      // e convertê-los para UTC para o .ics
+      const startDateTime = new Date(`${ag.data}T${ag.horario}`);
+      const endDateTime = new Date(startDateTime);
+      endDateTime.setHours(startDateTime.getHours() + 1); // Duração de 1 hora
+
+      const formatICSDate = (date) => {
+        const pad = (num) => num < 10 ? '0' + num : num;
+        return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T` +
+               `${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+      };
+
+      const icsContent = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//PetClinica Sao Lazaro//NONSGML v1.0//EN',
+        'BEGIN:VEVENT',
+        `UID:${ag.id}@petclinicasaolazaro.com`, // UID único
+        `DTSTAMP:${formatICSDate(new Date())}`, // Data de criação do evento .ics
+        `DTSTART:${formatICSDate(startDateTime)}`,
+        `DTEND:${formatICSDate(endDateTime)}`,
+        `SUMMARY:${title}`,
+        `DESCRIPTION:${description}`,
+        `LOCATION:${location}`,
+        'END:VEVENT',
+        'END:VCALENDAR'
+      ].join('\n');
+
+      const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `agendamento-${ag.nomePet}.ics`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url); // Libera o objeto URL
+
+      fecharModalAddAgenda();
+    }
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Primeiro, inicializa o FullCalendar com um array vazio (ou eventos já conhecidos, se houver)
+      inicializarFullCalendar();
+
+      auth.onAuthStateChanged(user => {
+        if (!user) {
+          alert('Acesso não autorizado. Faça login primeiro.');
+          window.location.href = 'login.html';
         } else {
-          snapshot.forEach(doc => {
-            const ag = doc.data();
-            const linha = tabelaAgendamentos.insertRow();
-            linha.className = 'border-b border-purple-200 dark:border-purple-700';
-            linha.innerHTML = `
-              <td class="cell" contenteditable="true" onblur="editarCampo('${doc.id}', 'nomePet', this.textContent)">${ag.nomePet}</td>
-              <td class="cell" contenteditable="true" onblur="editarCampo('${doc.id}', 'servico', this.textContent)">${ag.servico}</td>
-              <td class="cell" contenteditable="true" onblur="editarCampo('${doc.id}', 'data', this.textContent)">${ag.data}</td>
-              <td class="cell" contenteditable="true" onblur="editarCampo('${doc.id}', 'horario', this.textContent)">${ag.horario}</td>
-              <td class="cell" contenteditable="true" onblur="editarCampo('${doc.id}', 'contato', this.textContent)">${ag.contato || '-'}</td>
-              <td class="cell">
-                <button onclick="removerAgendamento('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors">Remover</button>
-              </td>
-            `;
-            eventos.push({ title: `${ag.nomePet} (${ag.servico})`, start: ag.data });
-          });
+          // Apenas carrega os agendamentos, o calendário já foi inicializado
+          carregarAgendamentos();
         }
+      });
 
-        // Inicializa o FullCalendar
-        fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
-          initialView: 'dayGridMonth',
-          locale: 'pt-br',
-          headerToolbar: {
-            left: 'prev,next today',
-            center: 'title',
-            right: 'dayGridMonth,timeGridWeek,listWeek' // Adicionado timeGridWeek para mais opções de visualização
-          },
-          events: eventos,
-          dateClick: info => {
-            // Preenche a data no formulário quando uma data é clicada no calendário
-            document.getElementById('data').value = info.dateStr;
-            document.getElementById('horario').focus();
-          }
-        });
-        fullCalendarInstance.render();
-
-      } catch (error) {
-        console.error("Erro ao carregar agendamentos:", error);
-        tabelaAgendamentos.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500 dark:text-red-400">Erro ao carregar agendamentos.</td></tr>';
+      // Aplica o tema salvo no localStorage ao carregar a página
+      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
       }
+    });
+
+    function logout() {
+      auth.signOut().then(() => {
+        sessionStorage.removeItem('logado');
+        window.location.href = 'login.html';
+      }).catch((error) => {
+        console.error("Erro ao fazer logout:", error);
+        alert("Erro ao fazer logout. Tente novamente.");
+      });
     }
 
-    async function editarCampo(id, campo, valor) {
-      try {
-        const atualizar = {};
-        atualizar[campo] = valor.trim();
-        await db.collection("agendamentos").doc(id).update(atualizar);
-        // Não precisa recarregar tudo, apenas atualiza a célula se necessário.
-        // Se a mudança de data ou horário afetar o calendário, carregarAgendamentos() pode ser chamada.
-        console.log(`Campo ${campo} atualizado para ${valor.trim()}`);
-      } catch (error) {
-        console.error("Erro ao editar campo:", error);
-        alert('Erro ao editar campo. Verifique o console.');
-      }
-    }
-
-    async function removerAgendamento(id) {
-      if (confirm('Tem certeza que deseja remover este agendamento?')) {
-        try {
-          await db.collection("agendamentos").doc(id).delete();
-          alert('Agendamento removido com sucesso!');
-          carregarAgendamentos(); // Recarrega a tabela e o calendário
-        } catch (error) {
-          console.error("Erro ao remover agendamento:", error);
-          alert('Erro ao remover agendamento. Verifique o console.');
-        }
-      }
+    // Alternar tema claro/escuro
+    function alternarTema() {
+      document.documentElement.classList.toggle('dark');
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
     }
   </script>
+
+  <style>
+    .input {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #c084fc;
+      border-radius: 0.375rem;
+      background-color: white;
+      color: black;
+    }
+    .dark .input {
+      background-color: #374151;
+      color: white;
+      border-color: #4b5563;
+    }
+    .cell {
+      padding: 0.5rem;
+      border: 1px solid #e5e7eb;
+    }
+    .dark .cell {
+      border-color: #4b5563;
+    }
+    /* Estilo para campos contenteditable */
+    td[contenteditable="true"] {
+      border: 1px dashed #ccc;
+      padding: 5px;
+      min-width: 50px; /* Para não sumir o campo se estiver vazio */
+    }
+    td[contenteditable="true"]:focus {
+      outline: none;
+      border-color: #8b5cf6; /* Cor roxa ao focar */
+      background-color: #f3e8ff; /* Fundo mais claro ao focar */
+      box-shadow: 0 0 0 1px #8b5cf6;
+    }
+    .dark td[contenteditable="true"]:focus {
+      background-color: #4a3364; /* Fundo mais escuro no dark mode */
+      border-color: #a78bfa;
+      box-shadow: 0 0 0 1px #a78bfa;
+    }
+  </style>
 </head>
-<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-white font-sans antialiased">
-  <header class="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-md">
-    <div class="container mx-auto flex justify-between items-center">
-      <h1 class="text-3xl font-extrabold tracking-tight">Gerenciar Agendamentos</h1>
-      <nav class="flex space-x-6 items-center">
-        <a href="index.html" class="hover:text-purple-200 transition duration-300">Dashboard</a>
-        <a href="admin.html" class="hover:text-purple-200 transition duration-300">Painel Administrativo</a>
-        <button onclick="logout()" class="bg-white text-purple-800 px-4 py-2 rounded-full font-semibold shadow-sm hover:bg-purple-100 transition duration-300 transform hover:scale-105">Sair</button>
+<body class="bg-gray-50 text-purple-900 font-sans dark:bg-gray-900 dark:text-white min-h-screen flex flex-col">
+  <header class="bg-purple-700 text-white p-4 shadow-md">
+    <div class="container mx-auto flex flex-col sm:flex-row justify-between items-center">
+      <div class="flex items-center mb-4 sm:mb-0">
+        <img src="image_c5c675.png" alt="PetClínica São Lázaro Logo" class="h-10 mr-3 object-contain">
+        <h1 class="text-2xl font-bold">Agendamentos</h1>
+      </div>
+      <nav class="flex flex-wrap justify-center sm:justify-end items-center space-x-4">
+        <a href="index.html" class="hover:underline text-white/90">Dashboard</a>
+        <a href="admin.html" class="hover:underline text-white/90">Administrativo</a>
+        <button onclick="logout()" class="bg-white text-purple-700 px-4 py-2 rounded-full hover:bg-purple-100 transition duration-300 ease-in-out shadow-lg">
+          Sair
+        </button>
       </nav>
     </div>
   </header>
 
-  <main class="container mx-auto p-8">
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Adicionar Novo Agendamento</h2>
-      <form id="form-agendamento" onsubmit="adicionarAgendamento(event)" class="space-y-4">
+  <main class="flex-grow container mx-auto p-6 md:p-8">
+    <section class="mb-8">
+      <h2 class="text-3xl font-bold text-purple-800 dark:text-purple-400 mb-6 text-center">Gestão de Agendamentos</h2>
+      <p class="text-lg text-gray-700 dark:text-gray-300 text-center max-w-2xl mx-auto">Gerencie e visualize todos os agendamentos da clínica de forma eficiente.</p>
+    </section>
+
+    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+      <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300 mb-4 border-b-2 border-purple-200 dark:border-purple-700 pb-2">Novo Agendamento</h3>
+      <form id="form-agendamento" onsubmit="adicionarAgendamento(event)" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
-          <label for="nome-pet" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nome do Pet:</label>
-          <input type="text" id="nome-pet" class="input" placeholder="Nome do pet" required>
-        </div>
-        <div>
-          <label for="servico" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Serviço:</label>
-          <input type="text" id="servico" class="input" placeholder="Ex: Consulta, Banho, Tosa" required>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label for="data" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Data:</label>
-            <input type="date" id="data" class="input" required>
-          </div>
-          <div>
-            <label for="horario" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Horário:</label>
-            <input type="time" id="horario" class="input" required>
-          </div>
+          <label for="data" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Data:</label>
+          <input type="date" id="data" class="input mt-1" required>
         </div>
         <div>
-          <label for="contato" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Contato do Tutor (WhatsApp/Telefone):</label>
-          <input type="text" id="contato" class="input" placeholder="Opcional: (XX) XXXXX-XXXX">
+          <label for="horario" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Horário:</label>
+          <input type="time" id="horario" class="input mt-1" required>
         </div>
-        <button type="submit" class="btn-purple">Adicionar Agendamento</button>
+        <div>
+          <label for="nomePet" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nome do Pet:</label>
+          <input type="text" id="nomePet" class="input mt-1" placeholder="Ex: Rex" required>
+        </div>
+        <div>
+          <label for="nomeTutor" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nome do Tutor:</label>
+          <input type="text" id="nomeTutor" class="input mt-1" placeholder="Ex: Ana Silva" required>
+        </div>
+        <div>
+          <label for="telefone" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Telefone do Tutor:</label>
+          <input type="tel" id="telefone" class="input mt-1" placeholder="Ex: (31) 99876-5432">
+        </div>
+        <div>
+          <label for="servico" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Serviço:</label>
+          <input type="text" id="servico" class="input mt-1" placeholder="Ex: Consulta, Banho e Tosa" required>
+        </div>
+        <div class="md:col-span-2 lg:col-span-3 flex justify-end">
+          <button type="submit" class="bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300 ease-in-out shadow-lg text-lg">
+            Adicionar Agendamento
+          </button>
+        </div>
       </form>
-    </section>
+    </div>
 
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Calendário de Agendamentos</h2>
-      <div id="calendar" class="bg-gray-100 dark:bg-gray-900 p-4 rounded-lg shadow-inner text-gray-900 dark:text-gray-100"></div>
-    </section>
+    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+      <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300 mb-4 border-b-2 border-purple-200 dark:border-purple-700 pb-2">Visualização do Calendário</h3>
+      <div id="calendar" class="dark:bg-gray-700 dark:text-white rounded-lg p-2"></div>
+    </div>
 
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Lista de Agendamentos</h2>
-      <table class="w-full text-left border border-purple-300 dark:border-purple-600 rounded-lg overflow-hidden">
-        <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200">
-          <tr>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Pet</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Serviço</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Data</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Horário</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Contato</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Ações</th>
-          </tr>
-        </thead>
-        <tbody id="tabela-agendamentos" class="bg-white dark:bg-gray-700 dark:text-white">
-          </tbody>
-      </table>
-    </section>
+    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+      <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300 mb-4 border-b-2 border-purple-200 dark:border-purple-700 pb-2">Lista de Agendamentos</h3>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-left border border-purple-300 dark:border-gray-700">
+          <thead class="bg-purple-200 dark:bg-purple-800">
+            <tr>
+              <th class="p-3 border border-purple-300 dark:border-gray-600">Data</th>
+              <th class="p-3 border border-purple-300 dark:border-gray-600">Horário</th>
+              <th class="p-3 border border-purple-300 dark:border-gray-600">Pet</th>
+              <th class="p-3 border border-purple-300 dark:border-gray-600">Tutor</th>
+              <th class="p-3 border border-purple-300 dark:border-gray-600">Telefone</th>
+              <th class="p-3 border border-purple-300 dark:border-gray-600">Serviço</th>
+              <th class="p-3 border border-purple-300 dark:border-gray-600 text-center">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-agendamentos" class="bg-white dark:bg-gray-700 dark:text-white">
+            </tbody>
+        </table>
+      </div>
+    </div>
   </main>
 
-  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
-    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-    Alternar Tema
+  <div id="modal-add-agenda" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm relative">
+      <h3 class="text-xl font-semibold text-purple-700 dark:text-purple-300 mb-4 border-b-2 border-purple-200 dark:border-purple-700 pb-2">Adicionar à Agenda</h3>
+      <p class="text-gray-700 dark:text-gray-300 mb-6 text-center">Escolha como deseja adicionar este agendamento à sua agenda:</p>
+      
+      <div class="flex flex-col space-y-4">
+        <button onclick="adicionarEventoAoGoogleCalendar()" class="bg-blue-600 text-white px-5 py-3 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center gap-2">
+          <img src="https://www.gstatic.com/images/branding/product/2x/calendar_2020q4_48dp.png" alt="Google Calendar" class="h-6 w-6">
+          Adicionar ao Google Calendar
+        </button>
+        <button onclick="baixarICS()" class="bg-gray-600 text-white px-5 py-3 rounded-md hover:bg-gray-700 transition duration-300 ease-in-out flex items-center justify-center gap-2">
+          <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L11.586 2.586A2 2 0 0010.172 2H6zm0 2h4.586L14 7.414V16H6V4zm.5 8a.5.5 0 000 1h7a.5.5 0 000-1h-7zM7 9a.5.5 0 01.5-.5h5a.5.5 0 010 1h-5A.5.5 0 017 9z" clip-rule="evenodd"></path></svg>
+          Baixar Arquivo .ICS
+        </button>
+      </div>
+      
+      <button onclick="fecharModalAddAgenda()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl font-bold">
+        &times;
+      </button>
+    </div>
+  </div>
+
+  <button onclick="alternarTema()" class="fixed bottom-4 left-4 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-white dark:text-gray-900 transition duration-300 ease-in-out text-lg">
+    🌓 Tema
   </button>
-
-  <style>
-    /* Estilos customizados para inputs e botões */
-    .input {
-      width: 100%;
-      padding: 0.75rem;
-      border: 1px solid #c084fc; /* purple-400 */
-      border-radius: 0.5rem; /* rounded-lg */
-      background-color: white;
-      color: black;
-      font-size: 1rem;
-    }
-    .dark .input {
-      background-color: #374151; /* gray-700 */
-      color: white;
-      border-color: #4b5563; /* gray-600 */
-    }
-    .input:focus {
-      outline: none;
-      border-color: #8b5cf6; /* purple-500 */
-      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
-    }
-    .btn-purple {
-      background-color: #8b5cf6; /* purple-500 */
-      color: white;
-      padding: 0.75rem 1.5rem;
-      border-radius: 0.5rem; /* rounded-lg */
-      transition: background-color 0.2s, transform 0.2s;
-      font-weight: 600;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-    .btn-purple:hover {
-      background-color: #7c3aed; /* purple-600 */
-      transform: translateY(-1px);
-    }
-    .dark .btn-purple {
-      background-color: #c084fc; /* purple-400 */
-      color: #3b0764; /* purple-950 */
-    }
-    .dark .btn-purple:hover {
-      background-color: #a855f7; /* purple-500 */
-      color: white;
-    }
-    .cell {
-      padding: 0.75rem;
-      border: 1px solid #d8b4fe; /* purple-300 */
-      text-align: left;
-    }
-    .dark .cell {
-      border-color: #6b21a8; /* purple-700 */
-    }
-
-    /* Estilos para o FullCalendar para se adequar ao tema */
-    #calendar {
-      background-color: #f3f4f6; /* gray-100 */
-      border-radius: 0.75rem;
-      padding: 1.5rem;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-
-    .dark #calendar {
-      background-color: #1f2937; /* gray-800 */
-    }
-
-    .fc .fc-toolbar-title {
-      color: #6d28d9; /* purple-700 */
-      font-weight: bold;
-    }
-    .dark .fc .fc-toolbar-title {
-      color: #c084fc; /* purple-400 */
-    }
-
-    .fc .fc-button {
-      background-color: #8b5cf6;
-      color: white;
-      border-color: #8b5cf6;
-    }
-    .fc .fc-button:hover {
-      background-color: #7c3aed;
-      border-color: #7c3aed;
-    }
-    .dark .fc .fc-button {
-      background-color: #c084fc;
-      color: #3b0764;
-      border-color: #c084fc;
-    }
-    .dark .fc .fc-button:hover {
-      background-color: #a855f7;
-      color: white;
-    }
-    .fc-theme-standard td, .fc-theme-standard th {
-        border-color: #e5e7eb; /* gray-200 */
-    }
-    .dark .fc-theme-standard td, .dark .fc-theme-standard th {
-        border-color: #4b5563; /* gray-600 */
-    }
-    .fc-daygrid-day-number {
-        color: #374151; /* gray-700 */
-    }
-    .dark .fc-daygrid-day-number {
-        color: #d1d5db; /* gray-300 */
-    }
-    .fc-event {
-        background-color: #a78bfa !important; /* purple-400 */
-        border-color: #a78bfa !important;
-        color: #3b0764 !important;
-    }
-    .dark .fc-event {
-        background-color: #9333ea !important; /* purple-700 */
-        border-color: #9333ea !important;
-        color: white !important;
-    }
-    .fc-day-today {
-        background-color: #f0f4f8 !important; /* light gray to highlight today */
-    }
-    .dark .fc-day-today {
-        background-color: #2c3547 !important; /* darker gray for dark mode today */
-    }
-  </style>
 </body>
 </html>
