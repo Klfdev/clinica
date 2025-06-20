@@ -2,208 +2,1075 @@
 <html lang="pt-br" class="">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Relatório de Vendas - PetClínica São Lázaro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relatórios de Vendas e Serviços - PetClínica São Lázaro</title>
 
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
   <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Poppins', 'sans-serif'], // Aplica Poppins como fonte padrão
+          }
+        }
+      }
+    }
+  </script>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+ <script>
+    // SCRIPT DEFINITIVO (v15 - Ambas as tabelas no PDF com cabeçalho roxo e corpo estilizado)
+    
+    // Configuração do Firebase
     const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU",
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // <<< SUA CHAVE API FIREBASE INSERIDA AQUI >>>
       authDomain: "petclinica-e4bc5.firebaseapp.com",
       projectId: "petclinica-e4bc5",
-      storageBucket: "petclinica-e4bc5.appspot.com",
+      storageBucket: "petclinica-e4bc5.firebasestorage.app", 
       messagingSenderId: "860007352252",
       appId: "1:860007352252:web:7180c7d607965a062e0db9"
     };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+
+    // Inicialização do Firebase App
+    let app;
+    try {
+        app = firebase.initializeApp(firebaseConfig);
+    } catch (error) {
+        console.error("Erro ao inicializar Firebase app:", error);
+        alert("Erro crítico: Falha ao inicializar o Firebase.");
+    }
+
     const auth = firebase.auth();
-  </script>
-</head>
-<body class="bg-purple-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen p-6 transition-all">
-  <div class="max-w-6xl mx-auto bg-white dark:bg-gray-800 rounded shadow p-6 space-y-8">
-    <h1 class="text-2xl font-bold text-purple-700 dark:text-purple-300">📋 Relatório de Vendas</h1>
+    const db = firebase.firestore();
 
-    <form onsubmit="adicionarItem(event)" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <select id="statusRelatorio" required class="input col-span-1 md:col-span-4">
-        <option value="Orçamento">🟢 Orçamento</option>
-        <option value="Em Atendimento">🟡 Em Atendimento</option>
-        <option value="Em Aberto">🔵 Em Aberto</option>
-        <option value="Relatório Detalhado">📄 Relatório Detalhado</option>
-        <option value="Resumo">📊 Resumo</option>
-        <option value="Forma de Pagamento">💳 Forma de Pagamento</option>
-      </select>
-      <input id="codigo" placeholder="Cód. Produto / Serviço" required class="input" />
-      <input id="animal" placeholder="Animal" required class="input" />
-      <input id="funcionario" placeholder="Funcionário" required class="input" />
-      <input id="valorUnitario" placeholder="Valor Unit." type="number" step="0.01" required class="input" />
-      <input id="quantidade" placeholder="Qtd." type="number" step="1" required class="input" />
-      <input id="desconto" placeholder="Desconto" type="number" step="0.01" class="input" />
-      <input id="valorLiquido" placeholder="Valor Líquido" type="number" step="0.01" required class="input" />
-      <button type="submit" class="btn-purple col-span-1 md:col-span-4">Adicionar ao Relatório</button>
-    </form>
+    // Variáveis globais
+    let itensNoCarrinho = [];
+    let vendasRegistradas = []; 
+    let itemSelecionadoParaAdd = null; 
+    let allAvailableItems = [];
+    let loggedInUserEmail = null; 
+    let logoBase64 = null;
 
-    <table class="w-full text-left border border-purple-300">
-      <thead class="bg-purple-200 dark:bg-purple-800">
-        <tr>
-          <th class="cell">Cód.</th>
-          <th class="cell">Animal</th>
-          <th class="cell">Funcionário</th>
-          <th class="cell">Unit.</th>
-          <th class="cell">Qtd.</th>
-          <th class="cell">Desc.</th>
-          <th class="cell">Líquido</th>
-          <th class="cell">Ações</th>
-        </tr>
-      </thead>
-      <tbody id="tabela-itens" class="bg-white dark:bg-gray-700 dark:text-white"></tbody>
-    </table>
+    // Objeto para mapear a forma de pagamento para um texto legível
+    const formaPagamentoMap = {
+        'dinheiro': 'Dinheiro',
+        'cartao_credito': 'Cartão de Crédito',
+        'cartao_debito': 'Cartão de Débito',
+        'pix': 'PIX',
+        'transferencia': 'Transferência Bancária',
+        'boleto': 'Boleto',
+        'outros': 'Outros'
+    };
 
-    <button onclick="gerarPDF()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-800 mt-4">📄 Gerar PDF</button>
-  </div>
+    // Função auxiliar para obter o texto legível da forma de pagamento
+    function getFormaPagamentoLegivel(key) {
+        return formaPagamentoMap[key] || key; // Retorna o valor mapeado ou a própria chave se não encontrar
+    }
 
-  <script>
-    let relatorio = [];
+    // =========================================================
+    // FUNÇÕES DE UI / UTILITÁRIOS
+    // =========================================================
+    function showLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
+    function hideLoading() { document.getElementById('loading-overlay').classList.add('hidden'); }
+    
+    function converterImagemParaBase64(url, callback) {
+        var img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = function () {
+            var canvas = document.createElement('canvas');
+            canvas.width = this.width;
+            canvas.height = this.height;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(this, 0, 0);
+            var dataURL = canvas.toDataURL('image/png');
+            callback(dataURL);
+        };
+        img.onerror = function() {
+            console.error("Não foi possível carregar a imagem do logo.");
+            callback(null);
+        }
+        img.src = url;
+    }
 
     auth.onAuthStateChanged(user => {
       if (!user) {
-        alert('Acesso negado. Faça login.');
         window.location.href = 'login.html';
       } else {
-        carregarItensSalvos();
+        loggedInUserEmail = user.email;
+        carregarVendas();
       }
     });
 
-    function adicionarItem(event) {
-      event.preventDefault();
-      const status = document.getElementById('statusRelatorio').value;
-      const item = {
-        status,
-        codigo: document.getElementById('codigo').value,
-        animal: document.getElementById('animal').value,
-        funcionario: document.getElementById('funcionario').value,
-        valorUnitario: parseFloat(document.getElementById('valorUnitario').value),
-        quantidade: parseInt(document.getElementById('quantidade').value),
-        desconto: parseFloat(document.getElementById('desconto').value) || 0,
-        valorLiquido: parseFloat(document.getElementById('valorLiquido').value),
-        data: new Date().toISOString()
+    function alternarTema() {
+      const html = document.documentElement;
+      html.classList.toggle('dark');
+      localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+      converterImagemParaBase64('./img/IMG_3402.PNG', base64 => { logoBase64 = base64; });
+
+      // Listeners de filtros de vendas
+      ['filter-type', 'filter-cliente-nome', 'filter-data-inicial', 'filter-data-final', 'filter-forma-pagamento'].forEach(id =>
+          document.getElementById(id).addEventListener('input', aplicarFiltrosVendas)
+      );
+      // Listeners de filtros da modal de produtos
+      ['modal-filter-nome', 'modal-filter-type'].forEach(id =>
+          document.getElementById(id).addEventListener('input', aplicarFiltrosProdutosModal)
+      );
+    });
+
+    async function logout() {
+      await auth.signOut();
+      window.location.href = 'login.html';
+    }
+
+    // =========================================================
+    // FUNÇÕES DE GERENCIAMENTO DE RASCUNHO (LocalStorage)
+    // =========================================================
+    function salvarRascunhoVenda() {
+      const rascunho = {
+        itens: itensNoCarrinho,
+        clienteNome: document.getElementById('cliente-nome').value.trim(),
+        formaPagamento: document.getElementById('forma-pagamento').value
       };
-
-      db.collection("relatorios").add(item).then(() => {
-        relatorio.push(item);
-        renderTabela();
-        event.target.reset();
-      });
+      localStorage.setItem('rascunhoVenda', JSON.stringify(rascunho));
     }
 
-    function carregarItensSalvos() {
-      db.collection("relatorios").orderBy("data", "desc").limit(10).get().then(snapshot => {
-        relatorio = snapshot.docs.map(doc => doc.data());
-        renderTabela();
-      });
-    }
-
-    function renderTabela() {
-      const tabela = document.getElementById('tabela-itens');
-      tabela.innerHTML = '';
-      relatorio.forEach((item, i) => {
-        const row = tabela.insertRow();
-        row.innerHTML = `
-          <td class="cell">${item.codigo}</td>
-          <td class="cell">${item.animal}</td>
-          <td class="cell">${item.funcionario}</td>
-          <td class="cell">R$ ${item.valorUnitario.toFixed(2)}</td>
-          <td class="cell">${item.quantidade}</td>
-          <td class="cell">R$ ${item.desconto.toFixed(2)}</td>
-          <td class="cell">R$ ${item.valorLiquido.toFixed(2)}</td>
-          <td class="cell"><button onclick="removerItem(${i})" class="bg-red-600 text-white px-2 py-1 rounded">Remover</button></td>
-        `;
-      });
-    }
-
-    function removerItem(index) {
-      relatorio.splice(index, 1);
-      renderTabela();
-    }
-
-    async function gerarPDF() {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-      const dataAtual = new Date().toLocaleString();
-
-      doc.setFontSize(16);
-      doc.setTextColor(124, 58, 237);
-      doc.text("PetClínica São Lázaro", 20, 20);
-      doc.setFontSize(11);
-      doc.text("R. Imirim, 396 - Vila Pérola, Contagem - MG, 32110-070", 20, 28);
-      doc.text("Telefone: (31) 3357-6649", 20, 34);
-      doc.setTextColor(0, 0, 0);
-      doc.line(20, 38, 190, 38);
-      doc.setFontSize(10);
-      doc.text(`Emitido em: ${dataAtual}`, 20, 44);
-
-      let y = 52;
-
-      relatorio.forEach((item, i) => {
-        doc.setFontSize(12);
-        doc.setTextColor(124, 58, 237);
-        doc.text(`${item.status}`, 20, y);
-        y += 8;
-
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(10);
-        doc.text(`${i + 1}. ${item.codigo} | ${item.animal} | ${item.funcionario}`, 20, y);
-        y += 6;
-        doc.text(`Unit: R$ ${item.valorUnitario.toFixed(2)} | Qtd: ${item.quantidade} | Desc: R$ ${item.desconto.toFixed(2)} | Líquido: R$ ${item.valorLiquido.toFixed(2)}`, 20, y);
-        y += 10;
-
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
+    function carregarRascunhoVenda() {
+      const rascunhoSalvo = localStorage.getItem('rascunhoVenda');
+      if (rascunhoSalvo) {
+        try {
+          const rascunho = JSON.parse(rascunhoSalvo);
+          itensNoCarrinho = rascunho.itens || [];
+          document.getElementById('cliente-nome').value = rascunho.clienteNome || '';
+          document.getElementById('forma-pagamento').value = rascunho.formaPagamento || 'dinheiro';
+          renderizarCarrinho();
+        } catch (e) {
+          localStorage.removeItem('rascunhoVenda');
         }
-      });
-
-      doc.save("relatorio-vendas.pdf");
+      }
     }
-  </script>
 
+    function limparRascunhoVenda() {
+      localStorage.removeItem('rascunhoVenda');
+    }
+
+    // =========================================================
+    // FUNÇÕES DE GERENCIAMENTO DE VENDAS (Firestore)
+    // =========================================================
+    async function carregarVendas() {
+      const tabelaVendasBody = document.getElementById('tabela-vendas');
+      tabelaVendasBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Carregando vendas...</td></tr>';
+      showLoading(); 
+      try {
+        db.collection('vendas').orderBy('dataVenda', 'desc').onSnapshot(snapshot => {
+            vendasRegistradas = []; 
+            if (snapshot.empty) {
+                tabelaVendasBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhuma venda registrada.</td></tr>';
+                hideLoading(); 
+                return; 
+            }
+            
+            snapshot.forEach(doc => {
+              const venda = doc.data();
+              let dataVendaTimestamp = null;
+              if (venda.dataVenda && typeof venda.dataVenda.toDate === 'function') {
+                  dataVendaTimestamp = venda.dataVenda; 
+              }
+              const totalVendaCalculado = (venda.itens || []).reduce((sum, item) => sum + ((parseFloat(item.quantidade) || 0) * (parseFloat(item.preco) || 0)), 0);
+              vendasRegistradas.push({ id: doc.id, ...venda, dataVenda: dataVendaTimestamp, totalCalculado: totalVendaCalculado });
+            });
+            renderizarVendas();
+            aplicarFiltrosVendas();
+            hideLoading(); 
+        }, error => {
+            console.error("Erro no listener de vendas:", error);
+            tabelaVendasBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500">Erro ao carregar vendas. Verifique o console.</td></tr>';
+            hideLoading(); 
+        });
+      } catch (error) {
+        console.error("Erro ao configurar listener de vendas:", error);
+        tabelaVendasBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500">Erro ao carregar vendas.</td></tr>';
+        hideLoading(); 
+      }
+    }
+
+    function renderizarVendas() {
+      const tabelaVendas = document.getElementById('tabela-vendas');
+      tabelaVendas.innerHTML = ''; 
+      if (vendasRegistradas.length === 0) {
+        tabelaVendas.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhuma venda registrada.</td></tr>';
+        return;
+      }
+      vendasRegistradas.forEach(venda => {
+        const dataFormatada = venda.dataVenda ? new Date(venda.dataVenda.toDate()).toLocaleDateString('pt-BR') : 'N/A';
+        const totalVenda = venda.totalCalculado;
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-purple-50 dark:hover:bg-gray-600';
+        row.dataset.vendaId = venda.id;
+        row.dataset.clienteNome = venda.clienteNome || '';
+        row.dataset.dataVendaMillis = venda.dataVenda ? venda.dataVenda.toDate().getTime() : 0;
+        const tiposItens = new Set((venda.itens || []).map(item => item.tipo));
+        row.dataset.tiposItens = Array.from(tiposItens).join(',');
+        row.dataset.formaPagamento = venda.formaPagamento ? venda.formaPagamento.toLowerCase() : '';
+
+        row.innerHTML = `
+            <td class="p-3 border border-purple-200 dark:border-gray-600">${dataFormatada}</td>
+            <td class="p-3 border border-purple-200 dark:border-gray-600">${venda.clienteNome || 'N/A'}</td>
+            <td class="p-3 border border-purple-200 dark:border-gray-600">
+              <ul class="list-disc pl-5">${(venda.itens || []).map(item => `<li>${item.nome} (${item.tipo})</li>`).join('')}</ul>
+              ${venda.formaPagamento ? `<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Pgto: ${getFormaPagamentoLegivel(venda.formaPagamento)}</p>` : ''}
+            </td>
+            <td class="p-3 border border-purple-200 dark:border-gray-600">R$ ${totalVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+            <td class="p-3 border border-purple-200 dark:border-gray-600 text-center">
+              <button onclick="verDetalhesVenda('${venda.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="Ver Detalhes"><svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></button>
+              <button onclick="gerarPDFVendaIndividual('${venda.id}')" class="text-green-600 hover:text-green-800 p-1" title="Baixar PDF"><svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></button>
+              <button onclick="excluirVenda('${venda.id}')" class="text-red-600 hover:text-red-800 p-1" title="Excluir Venda"><svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+            </td>`;
+        tabelaVendas.appendChild(row);
+      });
+    }
+
+    async function registrarVenda() {
+      const clienteNome = document.getElementById('cliente-nome').value.trim();
+      const formaPagamento = document.getElementById('forma-pagamento').value;
+      
+      if (itensNoCarrinho.length === 0 || !clienteNome || !formaPagamento) {
+        alert("Preencha o nome do cliente, selecione a forma de pagamento e adicione itens à venda.");
+        return;
+      }
+      showLoading();
+      try {
+        await db.collection('vendas').add({
+          clienteNome: clienteNome,
+          itens: itensNoCarrinho,
+          formaPagamento: formaPagamento,
+          dataVenda: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        const batch = db.batch();
+        for (const item of itensNoCarrinho) {
+          if (item.tipo === 'Produto') {
+            const produtoRef = db.collection('estoque').doc(item.id);
+            batch.update(produtoRef, { quantidade: firebase.firestore.FieldValue.increment(-item.quantidade) });
+          }
+        }
+        await batch.commit();
+        alert('Venda registrada com sucesso!');
+        limparCarrinho();
+        document.getElementById('cliente-nome').value = '';
+        document.getElementById('forma-pagamento').value = 'dinheiro';
+      } catch (error) {
+        alert(`Erro ao registrar venda: ${error.message}`);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    async function excluirVenda(id) {
+      if (confirm('Tem certeza? Esta ação não reverterá o estoque.')) {
+        showLoading();
+        try {
+          await db.collection('vendas').doc(id).delete();
+          alert('Venda excluída!');
+        } catch (error) {
+          alert("Erro ao excluir venda.");
+        } finally {
+          hideLoading();
+        }
+      }
+    }
+
+    function verDetalhesVenda(id) {
+      const venda = vendasRegistradas.find(v => v.id === id);
+      if (venda) {
+        const dataFormatada = venda.dataVenda ? new Date(venda.dataVenda.toDate()).toLocaleString('pt-BR') : 'N/A';
+        const totalVenda = (venda.itens || []).reduce((s, i) => s + (i.quantidade * (i.preco || 0)), 0);
+        
+        // --- Renderização da Tabela de Detalhes na Modal (continua HTML puro para a modal) ---
+        // Manterei esta parte como HTML puro para a modal, pois a solicitação focou no PDF.
+        // Se desejar mudar a modal para jspdf-autotable também, me informe.
+        let detalhesHtml = `
+            <div class="overflow-x-auto mb-4">
+                <table class="w-full text-left border border-purple-300 dark:border-purple-600 mb-4">
+                    <tbody class="bg-white dark:bg-gray-700 dark:text-white">
+                        <tr>
+                            <td class="p-2 border font-bold text-purple-700 dark:text-purple-300 w-1/3">Cliente:</td>
+                            <td class="p-2 border">${venda.clienteNome || 'Não informado'}</td>
+                        </tr>
+                        <tr>
+                            <td class="p-2 border font-bold text-purple-700 dark:text-purple-300">Data:</td>
+                            <td class="p-2 border">${dataFormatada}</td>
+                        </tr>
+                        <tr>
+                            <td class="p-2 border font-bold text-purple-700 dark:text-purple-300">Código da Venda:</td>
+                            <td class="p-2 border text-wrap break-all">${venda.id}</td>
+                        </tr>
+                        <tr>
+                            <td class="p-2 border font-bold text-purple-700 dark:text-purple-300">Forma de Pagamento:</td>
+                            <td class="p-2 border">${getFormaPagamentoLegivel(venda.formaPagamento)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>`;
+
+        detalhesHtml += `
+            <h4 class="text-lg font-semibold text-purple-700 dark:text-purple-300 mb-2">Itens da Venda:</h4>
+            <div class="overflow-x-auto mb-4">
+                <table class="w-full text-left border border-purple-300 dark:border-purple-600 mb-4">
+                    <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-100">
+                        <tr>
+                            <th class="p-3 border border-purple-300 dark:border-purple-600">Item</th>
+                            <th class="p-3 border border-purple-300 dark:border-purple-600">Tipo</th>
+                            <th class="p-3 border border-purple-300 dark:border-purple-600">Preço Unit.</th>
+                            <th class="p-3 border border-purple-300 dark:border-purple-600">Qtd.</th>
+                            <th class="p-3 border border-purple-300 dark:border-purple-600">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white dark:bg-gray-700 dark:text-white">
+                        ${(venda.itens || []).map(item => `
+                            <tr>
+                                <td class="p-2 border">${item.nome}</td>
+                                <td class="p-2 border">${item.tipo}</td>
+                                <td class="p-2 border">R$ ${parseFloat(item.preco || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                <td class="p-2 border">${item.quantidade}</td>
+                                <td class="p-2 border">R$ ${(item.quantidade * (item.preco || 0)).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+
+        detalhesHtml += `<p class="text-xl font-bold mt-4 text-right">Total: R$ ${totalVenda.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>`;
+        
+        document.getElementById('detalhes-venda-corpo').innerHTML = detalhesHtml;
+        document.getElementById('modal-detalhes-venda').classList.remove('hidden');
+      }
+    }
+
+
+    function fecharModalDetalhesVenda() {
+      document.getElementById('modal-detalhes-venda').classList.add('hidden');
+    }
+
+    // =========================================================
+    // FUNÇÕES DA MODAL DE NOVA VENDA (CARRINHO)
+    // =========================================================
+    function abrirModalVenda() {
+      document.getElementById('modal-nova-venda').classList.remove('hidden');
+      carregarProdutosNoModal();
+      carregarRascunhoVenda();
+      document.getElementById('cliente-nome').addEventListener('input', salvarRascunhoVenda);
+      document.getElementById('forma-pagamento').addEventListener('change', salvarRascunhoVenda);
+    }
+
+    function fecharModalVenda() {
+      document.getElementById('modal-nova-venda').classList.add('hidden');
+      document.getElementById('cliente-nome').removeEventListener('input', salvarRascunhoVenda);
+      document.getElementById('forma-pagamento').removeEventListener('change', salvarRascunhoVenda);
+    }
+
+    async function carregarProdutosNoModal() {
+      const produtosLista = document.getElementById('produtos-disponiveis-lista');
+      produtosLista.innerHTML = '<li>Carregando...</li>';
+      showLoading();
+      allAvailableItems = [];
+      try {
+        const estSnap = await db.collection('estoque').orderBy('nome').get();
+        estSnap.forEach(d => allAvailableItems.push({ id: d.id, ...d.data(), tipo: 'Produto' }));
+        const servSnap = await db.collection('servicos').orderBy('nome').get();
+        servSnap.forEach(d => allAvailableItems.push({ id: d.id, ...d.data(), tipo: 'Serviço' }));
+        allAvailableItems.sort((a,b) => a.nome.localeCompare(b.nome));
+        aplicarFiltrosProdutosModal();
+      } catch (e) {
+        produtosLista.innerHTML = '<li>Erro ao carregar itens.</li>';
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function aplicarFiltrosProdutosModal() {
+      const nomeFiltro = document.getElementById('modal-filter-nome').value.toLowerCase();
+      const tipoFiltro = document.getElementById('modal-filter-type').value;
+      const produtosLista = document.getElementById('produtos-disponiveis-lista');
+      produtosLista.innerHTML = '';
+      const itensFiltrados = allAvailableItems.filter(item => 
+          item.nome.toLowerCase().includes(nomeFiltro) &&
+          (tipoFiltro === 'todos' || item.tipo.toLowerCase() === tipoFiltro)
+      );
+      if (itensFiltrados.length === 0) {
+        produtosLista.innerHTML = '<li class="p-4 text-center text-gray-500">Nenhum item encontrado.</li>';
+        return;
+      }
+      itensFiltrados.forEach(item => {
+        const preco = item.precoVenda || item.preco;
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between p-3 border-b last:border-0';
+        li.innerHTML = `
+          <div>
+            <span class="font-semibold">${item.nome}</span> (${item.tipo})<br>
+            <span class="text-sm text-purple-600">R$ ${parseFloat(preco).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+            ${item.tipo === 'Produto' ? `<span class="text-xs"> | Estoque: ${item.quantidade}</span>` : ''}
+          </div>
+          <button onclick="selecionarProdutoParaCarrinho('${item.id}')" class="bg-purple-500 text-white w-8 h-8 rounded-full flex items-center justify-center">+</button>`;
+        produtosLista.appendChild(li);
+      });
+    }
+
+    function selecionarProdutoParaCarrinho(id) {
+        itemSelecionadoParaAdd = allAvailableItems.find(i => i.id === id);
+        if(itemSelecionadoParaAdd) {
+            document.getElementById('modal-quantidade-titulo').textContent = `Adicionar ${itemSelecionadoParaAdd.nome}`;
+            document.getElementById('input-quantidade-item').value = '1';
+            const estoqueInfo = document.getElementById('estoque-info');
+            if (itemSelecionadoParaAdd.tipo === 'Produto') {
+                document.getElementById('disponivel-quantidade').textContent = itemSelecionadoParaAdd.quantidade;
+                estoqueInfo.classList.remove('hidden');
+            } else {
+                estoqueInfo.classList.add('hidden');
+            }
+            document.getElementById('modal-quantidade').classList.remove('hidden');
+        }
+    }
+    
+    function fecharModalQuantidade() {
+      document.getElementById('modal-quantidade').classList.add('hidden');
+    }
+
+    function adicionarItemDoModal() {
+        const quantidade = parseInt(document.getElementById('input-quantidade-item').value);
+        if (isNaN(quantidade) || quantidade <= 0) {
+            alert('Quantidade inválida.');
+            return;
+        }
+        const preco = itemSelecionadoParaAdd.precoVenda || itemSelecionadoParaAdd.preco;
+        const itemExistente = itensNoCarrinho.find(i => i.id === itemSelecionadoParaAdd.id);
+        
+        if (itemExistente) {
+            itemExistente.quantidade += quantidade;
+        } else {
+            itensNoCarrinho.push({ ...itemSelecionadoParaAdd, preco, quantidade });
+        }
+        renderizarCarrinho();
+        salvarRascunhoVenda();
+        fecharModalQuantidade();
+    }
+
+    function renderizarCarrinho() {
+      const tabelaItens = document.getElementById('tabela-itens-selecionados');
+      tabelaItens.innerHTML = '';
+      let total = 0;
+      if (itensNoCarrinho.length === 0) {
+        tabelaItens.innerHTML = '<tr><td colspan="5" class="text-center p-4">Nenhum item adicionado.</td></tr>';
+      } else {
+        itensNoCarrinho.forEach((item, index) => {
+          const subtotal = item.quantidade * (item.preco || 0);
+          total += subtotal;
+          const row = document.createElement('tr');
+          row.innerHTML = `
+              <td class="p-2 border">${item.nome} (${item.tipo})</td>
+              <td class="p-2 border">R$ ${parseFloat(item.preco || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+              <td class="p-2 border"><input type="number" value="${item.quantidade}" onchange="atualizarQuantidadeCarrinho(${index}, this.value)" class="w-20 p-1 border rounded"></td>
+              <td class="p-2 border">R$ ${subtotal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+              <td class="p-2 border text-center"><button onclick="removerItemDoCarrinho(${index})" class="text-red-500">X</button></td>`;
+          tabelaItens.appendChild(row);
+        });
+      }
+      document.getElementById('total-venda').textContent = `R$ ${total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    }
+
+    function removerItemDoCarrinho(index) {
+        itensNoCarrinho.splice(index, 1);
+        renderizarCarrinho();
+        salvarRascunhoVenda();
+    }
+    
+    function atualizarQuantidadeCarrinho(index, novaQtd) {
+        const quantidade = parseInt(novaQtd);
+        if(quantidade > 0) {
+            itensNoCarrinho[index].quantidade = quantidade;
+            renderizarCarrinho();
+            salvarRascunhoVenda();
+        }
+    }
+
+    function limparCarrinho() {
+      itensNoCarrinho = [];
+      document.getElementById('cliente-nome').value = '';
+      document.getElementById('forma-pagamento').value = 'dinheiro';
+      limparRascunhoVenda();
+      renderizarCarrinho();
+    }
+
+    // =========================================================
+    // FUNÇÕES DE RELATÓRIOS (PDF) - VERSÃO COM TABELAS PADRONIZADAS
+    // =========================================================
+
+    function adicionarCabecalhoPDF(doc) {
+        doc.setFillColor(139, 92, 246); // Cor roxa para o cabeçalho
+        doc.rect(0, 0, doc.internal.pageSize.width, 35, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.setTextColor(255, 255, 255); // Texto branco
+        doc.text('PetClínica São Lázaro', 14, 22);
+        if (logoBase64) {
+            doc.addImage(logoBase64, 'PNG', doc.internal.pageSize.width - 14 - 28, 4, 28, 28);
+        }
+        doc.setTextColor(0, 0, 0); // Reset para preto para o corpo
+    }
+
+    function adicionarRodapePDF(doc, data) {
+        const pageCount = doc.internal.getNumberOfPages();
+        const y = doc.internal.pageSize.height - 10;
+        let userName = 'Usuário';
+        if (loggedInUserEmail) {
+            userName = loggedInUserEmail.split('@')[0];
+        }
+        doc.setFontSize(8);
+        doc.setTextColor(100);
+        const printDate = new Date().toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'medium'});
+        doc.text(`Impresso em: ${printDate}   Por: ${userName}`, 14, y);
+        doc.text(`Pág. ${data.pageNumber}/${pageCount}`, doc.internal.pageSize.width - 25, y);
+    }
+
+    function gerarPDFVendaIndividual(id) {
+        const venda = vendasRegistradas.find(v => v.id === id);
+        if (!venda) { return alert('Venda não encontrada.'); }
+
+        showLoading();
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const totalVenda = (venda.itens || []).reduce((sum, item) => sum + (item.quantidade * (item.preco || 0)), 0);
+        const dataVenda = venda.dataVenda ? new Date(venda.dataVenda.toDate()).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short'}) : 'N/A';
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text('Comprovante de Venda e Serviço', doc.internal.pageSize.width / 2, 48, { align: 'center' });
+
+        // --- TABELA DE INFORMAÇÕES DA VENDA (CLIENTE, DATA, CÓDIGO, FORMA DE PAGAMENTO) ---
+        let currentY = 60; 
+
+        // Cabeçalho da Tabela de Informações (Simulando)
+        const infoTableHeader = [['DETALHES DA VENDA', '']]; // Uma única linha para o "cabeçalho"
+        
+        // Dados para a Tabela de Informações
+        const infoTableRows = [
+            ['Cliente:', venda.clienteNome || 'Não informado'],
+            ['Data:', dataVenda],
+            ['Código da Venda:', venda.id],
+            ['Forma de Pagamento:', getFormaPagamentoLegivel(venda.formaPagamento) || 'Não informado']
+        ];
+
+        doc.autoTable({
+            head: infoTableHeader, // Usa este array como cabeçalho
+            body: infoTableRows,
+            startY: currentY,
+            theme: 'striped', // Mantém striped para linhas alternadas no corpo
+            headStyles: { 
+                fillColor: [139, 92, 246], // Roxo
+                textColor: [255, 255, 255], // Branco
+                fontStyle: 'bold',
+                fontSize: 10,
+                cellPadding: 2,
+                halign: 'center' // Centraliza o texto do cabeçalho
+            }, 
+            styles: { 
+                fontSize: 10, 
+                cellPadding: 2, 
+                textColor: [0, 0, 0] // Cor do texto preto para o corpo da tabela de detalhes
+            }, 
+            columnStyles: { 
+                0: { fontStyle: 'bold', cellWidth: 40 }, // Rótulos em negrito, largura ajustada
+                1: { cellWidth: 'auto', fontStyle: 'normal' } // Valores, largura automática
+            },
+            margin: { left: 14, right: 14 },
+            didDrawPage: (data) => {
+                // Não adicionamos cabeçalho/rodapé aqui para não duplicar,
+                // eles serão adicionados no didDrawPage da tabela principal de itens.
+            }
+        });
+
+        currentY = doc.lastAutoTable.finalY + 10; // Espaçamento antes da próxima tabela
+
+        // --- TABELA DE ITENS DA VENDA ---
+        const itemTableHeader = ["Produto / Serviço", "Tipo", "Valor unit.", "Qtd.", "Subtotal"];
+        const itemTableRows = (venda.itens || []).map(item => [
+            item.nome,
+            item.tipo,
+            `R$ ${parseFloat(item.preco || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+            item.quantidade,
+            `R$ ${(item.quantidade * (item.preco || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+        ]);
+
+        doc.autoTable({
+            head: [itemTableHeader],
+            body: itemTableRows,
+            startY: currentY, // Inicia após a tabela de detalhes
+            theme: 'striped',
+            headStyles: { 
+                fillColor: [139, 92, 246], // Roxo
+                textColor: [255, 255, 255], // Branco
+                fontStyle: 'bold',
+                fontSize: 10
+            },
+            styles: { 
+                fontSize: 9, 
+                cellPadding: 2, 
+                textColor: [0, 0, 0] // Cor do texto preto para o corpo da tabela de itens
+            },
+            margin: { left: 14, right: 14 },
+            didDrawPage: (data) => {
+                adicionarCabecalhoPDF(doc);
+                adicionarRodapePDF(doc, data);
+            }
+        });
+
+        const tableEndY = doc.lastAutoTable.finalY;
+        let totalY = tableEndY + 15;
+        // Se o total for muito para baixo, ajusta para não sair da página
+        if (totalY > doc.internal.pageSize.height - 20) {
+            totalY = doc.internal.pageSize.height - 20;
+        }
+
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        
+        doc.text('Total da Venda:', 140, totalY); 
+        doc.text(`R$ ${totalVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, doc.internal.pageSize.width - 14, totalY, { align: 'right' });
+
+        doc.save(`comprovante_${(venda.clienteNome || 'Cliente').replace(/\s/g, '_')}.pdf`);
+        hideLoading();
+    }
+
+    function gerarRelatorioVendasPDF() {
+        const vendasVisiveis = Array.from(document.querySelectorAll('#tabela-vendas tr[data-venda-id]'))
+                                    .filter(row => row.style.display !== 'none')
+                                    .map(row => vendasRegistradas.find(v => v.id === row.dataset.vendaId))
+                                    .filter(Boolean);
+
+        if (vendasVisiveis.length === 0) { return alert("Não há vendas visíveis para gerar o relatório."); }
+
+        showLoading();
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4');
+        let granTotalBruto = 0;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text('Relatório Geral de Vendas e Serviços', doc.internal.pageSize.width / 2, 48, { align: 'center' });
+      
+        const tableColumn = ["Data", "Cliente", "Itens", "Forma Pgto", "Total"];
+        const tableRows = vendasVisiveis.map(venda => {
+            const totalVenda = (venda.itens || []).reduce((s, i) => s + (i.quantidade * (i.preco || 0)), 0);
+            granTotalBruto += totalVenda;
+            return [
+                venda.dataVenda ? new Date(venda.dataVenda.toDate()).toLocaleDateString('pt-BR') : 'N/A',
+                venda.clienteNome,
+                (venda.itens || []).map(i => `${i.nome} (x${i.quantidade})`).join('\n'),
+                getFormaPagamentoLegivel(venda.formaPagamento) || 'N/A',
+                `R$ ${totalVenda.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`
+            ];
+        });
+
+        doc.autoTable({
+            head: [tableColumn],
+            body: tableRows,
+            startY: 60,
+            theme: 'grid',
+            headStyles: { fillColor: [139, 92, 246] },
+            didDrawPage: (data) => {
+                adicionarCabecalhoPDF(doc);
+                adicionarRodapePDF(doc, data);
+            }
+        });
+      
+        const tableEndY = doc.lastAutoTable.finalY;
+        let totalY = tableEndY + 15;
+        if (totalY > doc.internal.pageSize.height - 20) {
+            totalY = doc.internal.pageSize.height - 20;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text(`Total Geral do Período: R$ ${granTotalBruto.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`, 14, totalY);
+
+        doc.save('relatorio_geral_PetClinica.pdf');
+        hideLoading();
+    }
+    
+    // =========================================================
+    // FUNÇÕES DE FILTRAGEM
+    // =========================================================
+    function aplicarFiltrosVendas() {
+        const tipoFiltro = document.getElementById('filter-type').value;
+        const clienteFiltro = document.getElementById('filter-cliente-nome').value.toLowerCase().trim();
+        const dataInicialFiltro = document.getElementById('filter-data-inicial').value;
+        const dataFinalFiltro = document.getElementById('filter-data-final').value;
+        const formaPagamentoFiltro = document.getElementById('filter-forma-pagamento').value;
+        const dataInicialTimestamp = dataInicialFiltro ? new Date(dataInicialFiltro).setHours(0,0,0,0) : 0;
+        const dataFinalTimestamp = dataFinalFiltro ? new Date(dataFinalFiltro).setHours(23,59,59,999) : Infinity;
+        let hasVisibleRows = false;
+
+        document.querySelectorAll('#tabela-vendas tr[data-venda-id]').forEach(row => {
+            const clienteNomeVenda = row.dataset.clienteNome.toLowerCase();
+            const tiposItensVenda = row.dataset.tiposItens;
+            const dataVendaMillis = parseInt(row.dataset.dataVendaMillis);
+            const formaPagamentoVenda = row.dataset.formaPagamento;
+            let isVisible = true;
+
+            if (tipoFiltro !== 'todos' && !tiposItensVenda.includes(tipoFiltro.charAt(0).toUpperCase() + tipoFiltro.slice(1))) isVisible = false;
+            if (clienteFiltro && !clienteNomeVenda.includes(clienteFiltro)) isVisible = false;
+            if (dataVendaMillis < dataInicialTimestamp || dataVendaMillis > dataFinalTimestamp) isVisible = false;
+            if (formaPagamentoFiltro !== 'todos' && formaPagamentoVenda !== formaPagamentoFiltro) isVisible = false;
+
+            row.style.display = isVisible ? '' : 'none';
+            if(isVisible) hasVisibleRows = true;
+        });
+        
+        const tabela = document.getElementById('tabela-vendas');
+        let noResultsRow = tabela.querySelector('.no-results-row');
+        if (!hasVisibleRows && vendasRegistradas.length > 0) {
+            if (!noResultsRow) {
+                noResultsRow = tabela.insertRow();
+                noResultsRow.className = 'no-results-row';
+                noResultsRow.innerHTML = `<td colspan="5" class="p-4 text-center text-gray-500">Nenhum resultado para os filtros aplicados.</td>`;
+            } else {
+                noResultsRow.style.display = '';
+            }
+        } else if (noResultsRow) {
+            noResultsRow.style.display = 'none';
+        }
+    }
+
+</script>
   <style>
+    /* Estilos customizados (copiados do seu controle-estoque.html e ajustados) */
     .input {
       width: 100%;
-      padding: 0.5rem;
-      border: 1px solid #c084fc;
-      border-radius: 0.375rem;
+      padding: 0.75rem;
+      border: 1px solid #c084fc; /* purple-400 */
+      border-radius: 0.5rem; /* rounded-lg */
       background-color: white;
       color: black;
+      font-size: 1rem;
     }
     .dark .input {
-      background-color: #374151;
+      background-color: #374151; /* gray-700 */
       color: white;
-      border-color: #4b5563;
+      border-color: #4b5563; /* gray-600 */
+    }
+    .input:focus {
+      outline: none;
+      border-color: #8b5cf6; /* purple-500 */
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
     }
     .btn-purple {
-      background-color: #7c3aed;
+      background-color: #8b5cf6; /* purple-500 */
       color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: background-color 0.2s, transform 0.2s;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
     .btn-purple:hover {
-      background-color: #6b21a8;
+      background-color: #7c3aed; /* purple-600 */
+      transform: translateY(-1px);
     }
-    .cell {
-      padding: 0.5rem;
-      border: 1px solid #c084fc;
+    .dark .btn-purple {
+      background-color: #c084fc; /* purple-400 */
+      color: #3b0764; /* purple-950 */
     }
-    .dark .cell {
-      border-color: #4b5563;
+    .dark .btn-purple:hover {
+      background-color: #a855f7; /* purple-500 */
+      color: white;
+    }
+    .btn-outline-purple {
+      background-color: transparent;
+      color: #8b5cf6; /* purple-500 */
+      border: 2px solid #8b5cf6;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: all 0.2s;
+      font-weight: 600;
+      width: 100%;
+      text-align: center;
+    }
+    .btn-outline-purple:hover {
+      background-color: #ede9fe; /* purple-50 */
+      transform: translateY(-1px);
+    }
+    .dark .btn-outline-purple {
+      color: #c084fc; /* purple-400 */
+      border-color: #c084fc;
+    }
+    .dark .btn-outline-purple:hover {
+      background-color: rgba(192, 132, 252, 0.1); /* purple-400 com 10% de opacidade */
     }
   </style>
+</head>
+<body class="bg-gradient-to-r from-purple-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 text-gray-900 dark:text-white min-h-screen flex flex-col font-sans">
+  <header class="bg-purple-700 dark:bg-purple-900 text-white shadow-md">
+    <div class="container mx-auto p-4 flex justify-between items-center relative max-w-screen-xl"> 
+      <div class="flex-shrink-0 flex items-center"> 
+        <a href="index.html" class="flex items-center cursor-pointer hover:opacity-90 transition-opacity duration-200">
+          <img src="./img/IMG_3402.PNG" alt="PetClínica São Lázaro Logo" class="h-24 mr-3 object-contain"> 
+        </a>
+      </div>
+      
+      <button id="menu-toggle" class="lg:hidden text-white focus:outline-none z-50">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+      </button>
+
+      <nav id="mobile-menu" class="hidden lg:block absolute lg:static top-full left-0 w-full lg:w-auto 
+                                   bg-purple-700 dark:bg-purple-900 lg:bg-transparent lg:dark:bg-transparent 
+                                   shadow-lg lg:shadow-none z-40 
+                                   lg:flex lg:flex-grow lg:items-center lg:justify-end">
+        <ul class="flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-6 p-4 lg:p-0 
+                   lg:flex-wrap lg:justify-end"> 
+          <li><a href="index.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Dashboard</a></li>
+          <li><a href="agendamentos.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Agendamentos</a></li>
+          <li><a href="pacientes-tutores.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Pacientes e Tutores</a></li>
+          <li><a href="prontuario.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Prontuários</a></li>
+          <li><a href="controle-vacinas.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Vacinas</a></li>
+          <li><a href="controle-estoque.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Estoque</a></li>
+          <li><a href="relatorio-vendas.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Vendas</a></li>
+          <li><a href="financeiro.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Financeiro</a></li>
+          <li><a href="admin.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Administrativo</a></li>
+          <li><button onclick="logout()" class="block w-full text-left bg-red-500 px-4 py-2 rounded-md hover:bg-red-600 transition duration-300 lg:ml-6">Sair</button></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  
+  <main class="container mx-auto p-6 flex-grow">
+    <h2 class="text-4xl font-extrabold text-purple-800 dark:text-purple-200 mb-8 text-center">Relatórios de Vendas e Serviços</h2>
+
+    <section class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+      <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300">Registro de Venda</h3>
+        <button onclick="abrirModalVenda()" class="btn-purple flex-grow sm:flex-grow-0">Registrar Nova Venda</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+            <label for="cliente-nome" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Nome do Cliente:</label>
+            <input type="text" id="cliente-nome" class="input" placeholder="Nome do cliente/tutor">
+        </div>
+        <div>
+            <label for="forma-pagamento" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Forma de Pagamento:</label>
+            <select id="forma-pagamento" class="input">
+                <option value="dinheiro">Dinheiro</option>
+                <option value="cartao_credito">Cartão de Crédito</option>
+                <option value="cartao_debito">Cartão de Débito</option>
+                <option value="pix">PIX</option>
+                <option value="transferencia">Transferência Bancária</option>
+                <option value="boleto">Boleto</option>
+                <option value="outros">Outros</option>
+            </select>
+        </div>
+      </div>
+
+      <h4 class="text-xl font-semibold text-purple-700 dark:text-purple-300 mb-4">Itens da Venda</h4>
+      
+      <div class="overflow-x-auto mb-4">
+        <table class="w-full text-left border border-purple-300 dark:border-purple-600 mb-4">
+          <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-100">
+            <tr>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Item</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Preço Unitário</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Quantidade</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Subtotal</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600 text-center">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-itens-selecionados" class="bg-white dark:bg-gray-700 dark:text-white">
+            <tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum item adicionado à venda.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-between items-center bg-purple-100 dark:bg-purple-900 p-4 rounded-lg mb-6">
+        <span class="text-xl font-bold text-purple-800 dark:text-purple-200">Total da Venda:</span>
+        <span id="total-venda" class="text-2xl font-extrabold text-purple-900 dark:text-purple-100">R$ 0,00</span>
+      </div>
+
+      <div class="flex justify-end space-x-4">
+        <button onclick="limparCarrinho()" class="bg-red-500 text-white px-6 py-3 rounded-md hover:bg-red-600 transition duration-300 ease-in-out">Limpar Carrinho</button>
+        <button onclick="registrarVenda()" class="btn-purple px-6 py-3">Registrar Venda</button>
+      </div>
+    </section>
+
+    <section class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+      <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300">Histórico de Vendas</h3>
+        <button onclick="gerarRelatorioVendasPDF()" class="btn-purple flex-grow sm:flex-grow-0 flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2v2h-2m0-8h2v2h-2m0-8h2v2h-2M5 19h1.5a.5.5 0 00.5-.5V14.5a.5.5 0 00-.5-.5H5a.5.5 0 00-.5.5v4a.5.5 0 00.5.5zm0-8h1.5a.5.5 0 00.5-.5V6.5a.5.5 0 00-.5-.5H5a.5.5 0 00-.5.5v4a.5.5 0 00.5.5zm10-4.5V4h-4v2.5M10 9V7h-4V4h4M4 4h16v16H4V4z"></path></svg>
+          Gerar PDF de Vendas (Geral)
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div>
+              <label for="filter-type" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Filtrar por Tipo:</label>
+              <select id="filter-type" class="input">
+                  <option value="todos">Todos</option>
+                  <option value="produto">Produtos</option>
+                  <option value="servico">Serviços</option>
+              </select>
+          </div>
+          <div>
+              <label for="filter-cliente-nome" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Filtrar por Cliente:</label>
+              <input type="text" id="filter-cliente-nome" class="input" placeholder="Nome do cliente">
+          </div>
+          <div>
+              <label for="filter-data-inicial" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Data Inicial:</label>
+              <input type="date" id="filter-data-inicial" class="input">
+          </div>
+          <div>
+              <label for="filter-data-final" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Data Final:</label>
+              <input type="date" id="filter-data-final" class="input">
+          </div>
+          <div>
+              <label for="filter-forma-pagamento" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Filtrar por Pagamento:</label>
+              <select id="filter-forma-pagamento" class="input">
+                  <option value="todos">Todas</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="cartao_credito">Cartão de Crédito</option>
+                  <option value="cartao_debito">Cartão de Débito</option>
+                  <option value="pix">PIX</option>
+                  <option value="transferencia">Transferência Bancária</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="outros">Outros</option>
+              </select>
+          </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border border-purple-300 dark:border-purple-600 mb-4">
+          <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-100">
+            <tr>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Data</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Cliente</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Itens Vendidos</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Total</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600 text-center">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-vendas" class="bg-white dark:bg-gray-700 dark:text-white">
+            <tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Carregando vendas...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-nova-venda" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-2xl relative">
+      <h3 class="text-2xl font-bold text-purple-700 dark:text-purple-300 mb-6">Adicionar Itens à Venda</h3>
+      
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+              <label for="modal-filter-nome" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Buscar por Nome:</label>
+              <input type="text" id="modal-filter-nome" class="input" placeholder="Nome do item">
+          </div>
+          <div>
+              <label for="modal-filter-type" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Filtrar por Tipo:</label>
+              <select id="modal-filter-type" class="input">
+                  <option value="todos">Todos</option>
+                  <option value="produto">Produtos</option>
+                  <option value="servico">Serviços</option>
+              </select>
+          </div>
+      </div>
+
+      <div class="mb-4">
+        <h4 class="text-lg font-semibold text-purple-700 dark:text-purple-300 mb-3">Produtos e Serviços Disponíveis:</h4>
+        <ul id="produtos-disponiveis-lista" class="max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 p-2">
+          <li class="p-4 text-center text-gray-500 dark:text-gray-400">Carregando itens...</li>
+        </ul>
+      </div>
+
+      <div class="flex justify-end space-x-4 mt-6">
+          <button type="button" onclick="fecharModalVenda()" class="bg-gray-300 text-gray-800 px-6 py-3 rounded-md hover:bg-gray-400 transition duration-300 ease-in-out">Fechar</button>
+      </div>
+      <button onclick="fecharModalVenda()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl font-bold">
+          &times;
+      </button>
+    </div>
+  </div>
+
+  <div id="modal-quantidade" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-sm relative">
+      <h3 id="modal-quantidade-titulo" class="text-xl font-bold text-purple-700 dark:text-purple-300 mb-4">Adicionar Item</h3>
+
+      <div class="mb-4">
+        <label for="input-quantidade-item" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Quantidade:</label>
+        <input type="number" id="input-quantidade-item" class="input" value="1" min="1" onkeypress="if(event.key === 'Enter') adicionarItemDoModal()">
+      </div>
+      <div id="estoque-info" class="text-sm text-gray-600 dark:text-gray-400 mb-4 hidden">
+        Disponível em estoque: <span id="disponivel-quantidade" class="font-semibold">0</span>
+      </div>
+
+      <div class="flex justify-end space-x-4 mt-6">
+        <button type="button" onclick="fecharModalQuantidade()" class="bg-gray-300 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-400 transition duration-300 ease-in-out">Cancelar</button>
+        <button type="button" onclick="adicionarItemDoModal()" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition duration-300 ease-in-out">Adicionar</button>
+      </div>
+      <button onclick="fecharModalQuantidade()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl font-bold">
+          &times;
+      </button>
+    </div>
+  </div>
+
+  <div id="modal-detalhes-venda" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg relative">
+      <h3 class="text-2xl font-bold text-purple-700 dark:text-purple-300 mb-6">Detalhes da Venda</h3>
+      <div id="detalhes-venda-corpo" class="mb-6">
+        </div>
+      <div class="flex justify-end">
+        <button type="button" onclick="fecharModalDetalhesVenda()" class="bg-gray-300 text-gray-800 px-6 py-3 rounded-md hover:bg-gray-400 transition duration-300 ease-in-out">Fechar</button>
+      </div>
+      <button onclick="fecharModalDetalhesVenda()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl font-bold">
+          &times;
+      </button>
+    </div>
+  </div>
+
+  <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100]">
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-xl text-purple-700 dark:text-purple-300 flex items-center space-x-3">
+      <svg class="animate-spin h-8 w-8 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      <span>Carregando...</span>
+    </div>
+  </div>
+
+  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
+    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+    Alternar Tema
+  </button>
+
+  <script>
+    // Script para o menu mobile (Hamburger)
+    document.getElementById('menu-toggle').addEventListener('click', function() {
+      const mobileMenu = document.getElementById('mobile-menu');
+      mobileMenu.classList.toggle('hidden');
+      mobileMenu.classList.toggle('flex');
+    });
+  </script>
 </body>
 </html>
