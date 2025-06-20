@@ -3,359 +3,327 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Controle de Estoque - PetClínica São Lázaro</title>
+  <title>Controle de Estoque e Serviços - PetClínica São Lázaro</title>
 
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>tailwind.config = { darkMode: 'class' }</script>
-
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Poppins', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
   <script>
+    // Configuração do Firebase
     const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // <<< SUA CHAVE API FIREBASE INSERIDA AQUI >>>
       authDomain: "petclinica-e4bc5.firebaseapp.com",
       projectId: "petclinica-e4bc5",
-      storageBucket: "petclinica-e4bc5.appspot.com",
+      storageBucket: "petclinica-e4bc5.firebasestorage.app", // Atualizado conforme seu dado
       messagingSenderId: "860007352252",
       appId: "1:860007352252:web:7180c7d607965a062e0db9"
     };
+
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    // ----------------------------------------------------
-    // FUNÇÕES DE UI E TEMA
-    // ----------------------------------------------------
+    let editingItemId = null; // Para rastrear o item que está sendo editado
+    let editingItemType = null; // 'produto' ou 'servico'
 
-    let isDarkMode = localStorage.getItem('theme') === 'dark';
-    document.documentElement.classList.toggle('dark', isDarkMode);
-
-    function alternarTema() {
-      isDarkMode = !isDarkMode;
-      document.documentElement.classList.toggle('dark', isDarkMode);
-      if (isDarkMode) {
-        localStorage.setItem('theme', 'dark');
-      } else {
-        localStorage.removeItem('theme');
-      }
-    }
-
-    function logout() {
-      auth.signOut().then(() => {
-        window.location.href = 'login.html';
-      }).catch((error) => {
-        console.error("Erro ao fazer logout:", error);
-        alert("Ocorreu um erro ao sair. Tente novamente.");
-      });
-    }
-
-    // ----------------------------------------------------
-    // VERIFICAÇÃO DE AUTENTICAÇÃO E CARREGAMENTO DE DADOS
-    // ----------------------------------------------------
-    let dadosEstoque = []; // Array para armazenar os dados do estoque para o gráfico e PDF
-
+    // Listener para verificar o estado de autenticação
     auth.onAuthStateChanged(user => {
       if (!user) {
-        alert('Acesso não autorizado. Faça login primeiro.');
+        console.log("Usuário não autenticado. Redirecionando para login.html");
         window.location.href = 'login.html';
       } else {
-        carregarEstoque(); // Carrega os dados do estoque se o usuário estiver logado
+        console.log("Usuário autenticado:", user.email);
+        carregarItens(); // Carrega produtos e serviços ao autenticar
       }
     });
 
-    // ----------------------------------------------------
-    // LÓGICA DE ESTOQUE
-    // ----------------------------------------------------
-
-    async function adicionarItem() {
-      const nome = document.getElementById('nome').value;
-      const quantidade = parseInt(document.getElementById('quantidade').value);
-      const validade = document.getElementById('validade').value;
-      const lote = document.getElementById('lote').value;
-
-      if (!nome || !quantidade) {
-        alert('Por favor, preencha o nome e a quantidade do item.');
-        return;
-      }
-      if (quantidade <= 0) {
-        alert('A quantidade deve ser um número positivo.');
-        return;
-      }
-
-      try {
-        await db.collection("estoque").add({
-          nome,
-          quantidade,
-          validade: validade || null, // Armazena null se vazio
-          lote: lote || null,         // Armazena null se vazio
-          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        alert('Item adicionado ao estoque com sucesso!');
-        document.getElementById('form-estoque').reset();
-        carregarEstoque(); // Recarrega a tabela e o gráfico
-      } catch (error) {
-        console.error("Erro ao adicionar item:", error);
-        alert('Erro ao adicionar item. Verifique o console.');
+    // Função para alternar o tema (claro/escuro)
+    function alternarTema() {
+      const html = document.documentElement;
+      html.classList.toggle('dark');
+      if (html.classList.contains('dark')) {
+        localStorage.setItem('theme', 'dark');
+      } else {
+        localStorage.setItem('theme', 'light');
       }
     }
 
-    async function carregarEstoque() {
-      const tabelaCorpo = document.getElementById('tabela-estoque');
-      tabelaCorpo.innerHTML = ''; // Limpa a tabela
-      dadosEstoque = []; // Limpa os dados para o gráfico
+    // Aplica o tema salvo no localStorage
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    });
+
+    // Função para fazer logout
+    async function logout() {
+      try {
+        await auth.signOut();
+        window.location.href = 'login.html';
+      } catch (error) {
+        console.error("Erro ao fazer logout:", error);
+        alert("Ocorreu um erro ao fazer logout. Tente novamente.");
+      }
+    }
+
+    // =========================================================
+    // FUNÇÕES DE GERENCIAMENTO DE PRODUTOS E SERVIÇOS (Firestore)
+    // =========================================================
+
+    async function carregarItens() {
+      console.log("Carregando produtos e serviços...");
+      const tabelaItens = document.getElementById('tabela-itens');
+      tabelaItens.innerHTML = '';
+      const loadingOverlay = document.getElementById('loading-overlay');
+      loadingOverlay.classList.remove('hidden');
+
+      let allItems = [];
 
       try {
-        const snapshot = await db.collection("estoque").orderBy("nome").get();
-        if (snapshot.empty) {
-          tabelaCorpo.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum item no estoque ainda.</td></tr>';
-          atualizarGrafico(); // Atualiza o gráfico mesmo sem dados
+        // Carregar Produtos (da coleção 'estoque')
+        const produtosSnapshot = await db.collection('estoque').orderBy('nome', 'asc').get();
+        produtosSnapshot.forEach(doc => {
+          const produto = doc.data();
+          allItems.push({
+            id: doc.id,
+            tipo: 'produto',
+            nome: produto.nome,
+            preco: produto.precoVenda, // Usar precoVenda para produtos
+            quantidade: produto.quantidade,
+            descricao: produto.descricao || ''
+          });
+        });
+
+        // Carregar Serviços (da coleção 'servicos')
+        const servicosSnapshot = await db.collection('servicos').orderBy('nome', 'asc').get();
+        servicosSnapshot.forEach(doc => {
+          const servico = doc.data();
+          allItems.push({
+            id: doc.id,
+            tipo: 'servico',
+            nome: servico.nome,
+            preco: servico.preco, // Usar preco para serviços
+            quantidade: 'N/A', // Serviços não têm quantidade de estoque
+            descricao: servico.descricao || ''
+          });
+        });
+
+        if (allItems.length === 0) {
+          tabelaItens.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum produto ou serviço registrado.</td></tr>';
           return;
         }
 
-        snapshot.forEach(doc => {
-          const item = doc.data();
-          dadosEstoque.push(item); // Adiciona para o gráfico e PDF
-          const linha = tabelaCorpo.insertRow();
-          linha.className = 'border-b border-purple-200 dark:border-purple-700';
+        // Ordena por nome para uma visualização mais organizada
+        allItems.sort((a, b) => a.nome.localeCompare(b.nome));
 
-          linha.innerHTML = `
-            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'nome', this.textContent)">${item.nome}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'quantidade', this.textContent)">${item.quantidade}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'validade', this.textContent)">${item.validade || '-'}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoEstoque('${doc.id}', 'lote', this.textContent)">${item.lote || '-'}</td>
-            <td class="cell">
-              <button onclick="removerItem('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors">Remover</button>
-            </td>
+        allItems.forEach(item => {
+          const row = `
+            <tr class="hover:bg-purple-50 dark:hover:bg-gray-600 transition duration-150">
+              <td class="p-3 border border-purple-200 dark:border-gray-600">${item.nome}</td>
+              <td class="p-3 border border-purple-200 dark:border-gray-600">R$ ${parseFloat(item.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+              <td class="p-3 border border-purple-200 dark:border-gray-600">${item.quantidade}</td>
+              <td class="p-3 border border-purple-200 dark:border-gray-600">${item.tipo === 'produto' ? 'Produto' : 'Serviço'}</td>
+              <td class="p-3 border border-purple-200 dark:border-gray-600">${item.descricao || 'Sem descrição'}</td>
+              <td class="p-3 border border-purple-200 dark:border-gray-600 text-center">
+                <button onclick="abrirModalItem('${item.id}', '${item.tipo}')" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 mr-2 transition duration-300">
+                  <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                </button>
+                <button onclick="excluirItem('${item.id}', '${item.tipo}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-600 transition duration-300">
+                  <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+              </td>
+            </tr>
           `;
+          tabelaItens.innerHTML += row;
         });
-        atualizarGrafico(); // Atualiza o gráfico com os novos dados
+        console.log("Produtos e serviços carregados e exibidos.");
+
       } catch (error) {
-        console.error("Erro ao carregar estoque:", error);
-        tabelaCorpo.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500 dark:text-red-400">Erro ao carregar estoque.</td></tr>';
-        atualizarGrafico(); // Tenta atualizar o gráfico mesmo com erro para limpar o anterior
+        console.error("Erro ao carregar itens:", error);
+        alert("Erro ao carregar produtos e serviços. Verifique o console.");
+        tabelaItens.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Erro ao carregar itens.</td></tr>';
+      } finally {
+        loadingOverlay.classList.add('hidden');
       }
     }
 
-    async function editarCampoEstoque(id, campo, valor) {
+    function abrirModalItem(id = null, tipo = null) {
+      console.log(`Abrindo modal para ID: ${id}, Tipo: ${tipo}`);
+      const modal = document.getElementById('modal-item');
+      const formTitulo = document.getElementById('modal-item-titulo');
+      const btnSalvar = document.getElementById('btn-salvar-item');
+      const itemTypeSelect = document.getElementById('item-type-select');
+      const produtoFields = document.getElementById('produto-fields');
+      const servicoFields = document.getElementById('servico-fields');
+
+      // Limpa o formulário
+      document.getElementById('item-nome').value = '';
+      document.getElementById('item-preco').value = '';
+      document.getElementById('item-quantidade').value = '';
+      document.getElementById('item-descricao').value = '';
+
+      editingItemId = id;
+      editingItemType = tipo;
+
+      if (id) { // Modo de edição
+        formTitulo.textContent = `Editar ${tipo === 'produto' ? 'Produto' : 'Serviço'}`;
+        btnSalvar.textContent = 'Salvar Edição';
+        itemTypeSelect.value = tipo;
+        itemTypeSelect.disabled = true; // Não permite mudar o tipo na edição
+
+        const collectionRef = tipo === 'produto' ? db.collection('estoque') : db.collection('servicos');
+
+        collectionRef.doc(id).get().then(doc => {
+          if (doc.exists) {
+            const data = doc.data();
+            document.getElementById('item-nome').value = data.nome || '';
+            // Usa 'precoVenda' para produto e 'preco' para serviço
+            document.getElementById('item-preco').value = data.precoVenda !== undefined ? data.precoVenda : (data.preco !== undefined ? data.preco : '');
+            document.getElementById('item-descricao').value = data.descricao || '';
+
+            if (tipo === 'produto') {
+              document.getElementById('item-quantidade').value = data.quantidade || '';
+            }
+            toggleItemFormType(); // Ajusta a visibilidade dos campos
+            modal.classList.remove('hidden');
+          } else {
+            alert("Item não encontrado para edição.");
+            console.error("Item não encontrado:", id, tipo);
+            fecharModalItem();
+          }
+        }).catch(error => {
+          console.error("Erro ao carregar item para edição:", error);
+          alert("Erro ao carregar item para edição. Verifique o console.");
+          fecharModalItem();
+        });
+
+      } else { // Modo de criação
+        formTitulo.textContent = 'Registrar Novo Item (Produto ou Serviço)';
+        btnSalvar.textContent = 'Registrar Item';
+        itemTypeSelect.value = 'produto'; // Padrão
+        itemTypeSelect.disabled = false;
+        toggleItemFormType(); // Ajusta a visibilidade dos campos para o padrão 'produto'
+        modal.classList.remove('hidden');
+      }
+    }
+
+    function fecharModalItem() {
+      document.getElementById('modal-item').classList.add('hidden');
+      document.getElementById('item-type-select').disabled = false; // Reabilita o select ao fechar
+    }
+
+    function toggleItemFormType() {
+      const itemType = document.getElementById('item-type-select').value;
+      const produtoFields = document.getElementById('produto-fields');
+      const servicoFields = document.getElementById('servico-fields');
+
+      if (itemType === 'produto') {
+        produtoFields.classList.remove('hidden');
+        servicoFields.classList.add('hidden');
+      } else { // 'servico'
+        produtoFields.classList.add('hidden');
+        servicoFields.classList.remove('hidden');
+      }
+    }
+
+    async function salvarItem() {
+      const nome = document.getElementById('item-nome').value.trim();
+      const preco = parseFloat(document.getElementById('item-preco').value);
+      const quantidade = document.getElementById('item-quantidade').value === '' ? null : parseInt(document.getElementById('item-quantidade').value);
+      const descricao = document.getElementById('item-descricao').value.trim();
+      const itemType = document.getElementById('item-type-select').value;
+
+      // Validação básica
+      if (!nome || isNaN(preco) || preco <= 0) {
+        alert("Por favor, preencha o nome e um preço válido (maior que zero).");
+        return;
+      }
+
+      if (itemType === 'produto' && (isNaN(quantidade) || quantidade < 0)) {
+        alert("Para produtos, a quantidade deve ser um número válido e não negativo.");
+        return;
+      }
+
+      const loadingOverlay = document.getElementById('loading-overlay');
+      loadingOverlay.classList.remove('hidden');
+
+      let itemData = {};
+      let collectionRef;
+
+      if (itemType === 'produto') {
+        itemData = {
+          nome,
+          precoVenda: preco, // Mantém precoVenda para produtos para compatibilidade com relatorio-vendas.html
+          quantidade: quantidade || 0, // Garante que a quantidade seja 0 se não for preenchida
+          descricao,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        collectionRef = db.collection('estoque');
+      } else { // 'servico'
+        itemData = {
+          nome,
+          preco: preco, // Preço para serviços
+          descricao,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        collectionRef = db.collection('servicos');
+      }
+
       try {
-        const atualizar = {};
-        // Converte quantidade para número, se for o campo 'quantidade'
-        if (campo === 'quantidade') {
-          const numValor = parseInt(valor);
-          if (isNaN(numValor) || numValor < 0) {
-            alert('Quantidade deve ser um número não negativo.');
-            carregarEstoque(); // Recarrega para restaurar o valor original
-            return;
-          }
-          atualizar[campo] = numValor;
+        if (editingItemId) {
+          await collectionRef.doc(editingItemId).update(itemData);
+          alert(`${itemType === 'produto' ? 'Produto' : 'Serviço'} atualizado com sucesso!`);
         } else {
-          atualizar[campo] = valor.trim();
+          await collectionRef.add(itemData);
+          alert(`${itemType === 'produto' ? 'Produto' : 'Serviço'} registrado com sucesso!`);
         }
-        
-        await db.collection("estoque").doc(id).update(atualizar);
-        console.log(`Campo ${campo} do item ${id} atualizado para ${valor.trim()}`);
-        carregarEstoque(); // Recarrega para atualizar o gráfico e a tabela (se quantidades mudarem)
+        fecharModalItem();
+        carregarItens(); // Recarrega a lista
       } catch (error) {
-        console.error("Erro ao editar campo:", error);
-        alert('Erro ao editar campo. Verifique o console.');
+        console.error("Erro ao salvar item:", error);
+        alert(`Ocorreu um erro ao salvar o ${itemType === 'produto' ? 'produto' : 'serviço'}. Detalhe: ${error.message}`);
+      } finally {
+        loadingOverlay.classList.add('hidden');
       }
     }
 
-    async function removerItem(id) {
-      if (confirm('Tem certeza que deseja remover este item do estoque?')) {
+    async function excluirItem(id, tipo) {
+      if (confirm(`Tem certeza que deseja excluir este ${tipo === 'produto' ? 'produto' : 'serviço'}?`)) {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        loadingOverlay.classList.remove('hidden');
         try {
-          await db.collection("estoque").doc(id).delete();
-          alert('Item removido do estoque com sucesso!');
-          carregarEstoque(); // Recarrega a tabela e o gráfico
+          const collectionRef = tipo === 'produto' ? db.collection('estoque') : db.collection('servicos');
+          await collectionRef.doc(id).delete();
+          alert(`${tipo === 'produto' ? 'Produto' : 'Serviço'} excluído com sucesso!`);
+          carregarItens(); // Recarrega a lista
         } catch (error) {
-          console.error("Erro ao remover item:", error);
-          alert('Erro ao remover item. Verifique o console.');
+          console.error("Erro ao excluir item:", error);
+          alert(`Erro ao excluir ${tipo === 'produto' ? 'produto' : 'serviço'}. Detalhe: ${error.message}`);
+        } finally {
+          loadingOverlay.classList.add('hidden');
         }
       }
-    }
-
-    let graficoEstoque; // Variável para a instância do Chart.js
-
-    function atualizarGrafico() {
-      const ctx = document.getElementById('graficoEstoque').getContext('2d');
-      const labels = dadosEstoque.map(i => i.nome);
-      const quantidades = dadosEstoque.map(i => i.quantidade);
-      const cores = quantidades.map(q => q < 5 ? '#ef4444' : '#8b5cf6'); // Vermelho se baixo, roxo normal
-
-      if (graficoEstoque) graficoEstoque.destroy(); // Destroi o gráfico anterior se existir
-
-      graficoEstoque = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Quantidade em Estoque',
-            data: quantidades,
-            backgroundColor: cores,
-            borderColor: cores.map(c => c.replace('0.7', '1')), // Bordas mais escuras
-            borderWidth: 1
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false, // Permite que o gráfico se ajuste melhor ao container
-          plugins: {
-            legend: {
-              display: true,
-              position: 'top',
-              labels: {
-                color: isDarkMode ? 'white' : 'black' // Cor da legenda no modo escuro
-              }
-            },
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        let label = context.dataset.label || '';
-                        if (label) {
-                            label += ': ';
-                        }
-                        if (context.parsed.y !== null) {
-                            label += new Intl.NumberFormat('pt-BR').format(context.parsed.y);
-                        }
-                        return label;
-                    }
-                }
-            }
-          },
-          scales: {
-            x: {
-              ticks: { color: isDarkMode ? 'white' : 'black' },
-              grid: { color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
-            },
-            y: {
-              beginAtZero: true,
-              ticks: { color: isDarkMode ? 'white' : 'black' },
-              grid: { color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
-            }
-          }
-        }
-      });
-    }
-
-    async function exportarPDF() {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
-      doc.text("Relatório de Estoque - PetClínica São Lázaro", 105, 20, null, null, "center");
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text("Gerado em: " + new Date().toLocaleDateString('pt-BR'), 105, 30, null, null, "center");
-
-      const head = [['Nome', 'Quantidade', 'Validade', 'Lote']];
-      const body = dadosEstoque.map(item => [
-        item.nome,
-        item.quantidade,
-        item.validade || '-',
-        item.lote || '-'
-      ]);
-
-      doc.autoTable({
-        startY: 45,
-        head: head,
-        body: body,
-        theme: 'striped',
-        headStyles: { fillColor: [139, 92, 246] }, // purple-500
-        styles: { fontSize: 9, cellPadding: 2 },
-        columnStyles: {
-          0: { cellWidth: 50 },
-          1: { cellWidth: 25, halign: 'right' },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 30 }
-        },
-        didDrawPage: function (data) {
-          let str = "Página " + doc.internal.getNumberOfPages();
-          doc.setFontSize(8);
-          doc.text(str, data.settings.margin.left, doc.internal.pageSize.height - 10);
-        }
-      });
-
-      doc.save("relatorio_estoque.pdf");
     }
   </script>
-</head>
-<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-white font-sans antialiased">
-  <header class="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-md">
-    <div class="container mx-auto flex justify-between items-center">
-      <h1 class="text-3xl font-extrabold tracking-tight">Controle de Estoque</h1>
-      <nav class="flex space-x-6 items-center">
-        <a href="index.html" class="hover:text-purple-200 transition duration-300">Dashboard</a>
-        <a href="admin.html" class="hover:text-purple-200 transition duration-300">Painel Administrativo</a>
-        <button onclick="logout()" class="bg-white text-purple-800 px-4 py-2 rounded-full font-semibold shadow-sm hover:bg-purple-100 transition duration-300 transform hover:scale-105">Sair</button>
-      </nav>
-    </div>
-  </header>
-
-  <main class="container mx-auto p-8">
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Adicionar/Atualizar Item</h2>
-      <form id="form-estoque" onsubmit="event.preventDefault(); adicionarItem();" class="space-y-4">
-        <div>
-          <label for="nome" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nome do Item:</label>
-          <input type="text" id="nome" class="input" placeholder="Ex: Ração Premium, Antibiótico" required>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label for="quantidade" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Quantidade:</label>
-            <input type="number" id="quantidade" class="input" value="1" min="1" required>
-          </div>
-          <div>
-            <label for="validade" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Validade (Opcional):</label>
-            <input type="date" id="validade" class="input">
-          </div>
-          <div>
-            <label for="lote" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Número do Lote (Opcional):</label>
-            <input type="text" id="lote" class="input" placeholder="Lote do produto">
-          </div>
-        </div>
-        <button type="submit" class="btn-purple">Salvar Item no Estoque</button>
-      </form>
-    </section>
-
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Visualização do Estoque</h2>
-      <div class="h-80 mb-6"> <canvas id="graficoEstoque"></canvas>
-      </div>
-      <button onclick="exportarPDF()" class="btn-outline-purple">Exportar Estoque para PDF</button>
-    </section>
-
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Itens em Estoque</h2>
-      <table class="w-full text-left border border-purple-300 dark:border-purple-600 rounded-lg overflow-hidden">
-        <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200">
-          <tr>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Nome</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Quantidade</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Validade</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Lote</th>
-            <th class="p-3 border border-purple-300 dark:border-purple-600">Ações</th>
-          </tr>
-        </thead>
-        <tbody id="tabela-estoque" class="bg-white dark:bg-gray-700 dark:text-white">
-          </tbody>
-      </table>
-    </section>
-  </main>
-
-  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
-    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-    Alternar Tema
-  </button>
 
   <style>
-    /* Estilos customizados para inputs e botões */
+    /* Estilos customizados (copiados do seu relatorio-vendas.html) */
     .input {
       width: 100%;
       padding: 0.75rem;
@@ -404,31 +372,149 @@
       border-radius: 0.5rem; /* rounded-lg */
       transition: all 0.2s;
       font-weight: 600;
-      width: 100%; /* Ocupa a largura total */
-      text-align: center; /* Centraliza o texto */
+      width: 100%;
+      text-align: center;
     }
     .btn-outline-purple:hover {
       background-color: #ede9fe; /* purple-50 */
-      color: #7c3aed; /* purple-600 */
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      transform: translateY(-1px);
     }
     .dark .btn-outline-purple {
       color: #c084fc; /* purple-400 */
       border-color: #c084fc;
     }
     .dark .btn-outline-purple:hover {
-      background-color: #581c87; /* purple-900 */
-      color: white;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    }
-    .cell {
-      padding: 0.75rem;
-      border: 1px solid #d8b4fe; /* purple-300 */
-      text-align: left;
-    }
-    .dark .cell {
-      border-color: #6b21a8; /* purple-700 */
+      background-color: rgba(192, 132, 252, 0.1); /* purple-400 com 10% de opacidade */
     }
   </style>
+</head>
+<body class="bg-gradient-to-r from-purple-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 text-gray-900 dark:text-white min-h-screen flex flex-col font-sans">
+<header class="bg-purple-700 dark:bg-purple-900 text-white shadow-md">
+    <div class="container mx-auto p-4 flex justify-between items-center relative max-w-screen-xl"> 
+      <div class="flex-shrink-0 flex items-center"> 
+        <a href="index.html" class="flex items-center cursor-pointer hover:opacity-90 transition-opacity duration-200">
+          <img src="./img/IMG_3402.PNG" alt="PetClínica São Lázaro Logo" class="h-24 mr-3 object-contain"> 
+          </a>
+      </div>
+      
+      <button id="menu-toggle" class="lg:hidden text-white focus:outline-none z-50">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+      </button>
+
+      <nav id="mobile-menu" class="hidden lg:block absolute lg:static top-full left-0 w-full lg:w-auto 
+                                    bg-purple-700 dark:bg-purple-900 lg:bg-transparent lg:dark:bg-transparent 
+                                    shadow-lg lg:shadow-none z-40 
+                                    lg:flex lg:flex-grow lg:items-center lg:justify-end">
+        <ul class="flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-6 p-4 lg:p-0 
+                   lg:flex-wrap lg:justify-end"> 
+          <li><a href="index.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Dashboard</a></li>
+          <li><a href="agendamentos.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Agendamentos</a></li>
+          <li><a href="pacientes-tutores.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Pacientes e Tutores</a></li>
+          <li><a href="prontuario.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Prontuários</a></li>
+          <li><a href="controle-vacinas.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Vacinas</a></li>
+          <li><a href="controle-estoque.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Estoque</a></li>
+          <li><a href="relatorio-vendas.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Vendas</a></li>
+          <li><a href="financeiro.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Financeiro</a></li>
+          <li><a href="admin.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Administrativo</a></li>
+          <li><button onclick="logout()" class="block w-full text-left bg-red-500 px-4 py-2 rounded-md hover:bg-red-600 transition duration-300 lg:ml-6">Sair</button></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  
+  <main class="container mx-auto p-6 flex-grow">
+    <h2 class="text-4xl font-extrabold text-purple-800 dark:text-purple-200 mb-8 text-center">Gerenciamento de Produtos e Serviços</h2>
+
+    <section class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+      <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h3 class="text-2xl font-semibold text-purple-700 dark:text-purple-300">Itens Cadastrados</h3>
+        <button onclick="abrirModalItem()" class="btn-purple flex-grow sm:flex-grow-0">Novo Item (Produto/Serviço)</button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border border-purple-300 dark:border-purple-600 mb-4">
+          <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-100">
+            <tr>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Nome</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Preço</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Quantidade (Estoque)</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Tipo</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600">Descrição</th>
+              <th class="p-3 border border-purple-300 dark:border-purple-600 text-center">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-itens" class="bg-white dark:bg-gray-700 dark:text-white">
+            <tr><td colspan="6" class="p-4 text-center text-gray-500 dark:text-gray-400">Carregando itens...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-item" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg relative">
+      <h3 id="modal-item-titulo" class="text-2xl font-bold text-purple-700 dark:text-purple-300 mb-6">Registrar Novo Item</h3>
+
+      <div class="mb-4">
+          <label for="item-type-select" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Tipo de Item:</label>
+          <select id="item-type-select" class="input" onchange="toggleItemFormType()">
+              <option value="produto">Produto</option>
+              <option value="servico">Serviço</option>
+          </select>
+      </div>
+
+      <div class="mb-4">
+        <label for="item-nome" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Nome do Item:</label>
+        <input type="text" id="item-nome" class="input" placeholder="Nome do Produto ou Serviço" required>
+      </div>
+
+      <div class="mb-4">
+        <label for="item-preco" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Preço (R$):</label>
+        <input type="number" id="item-preco" class="input" placeholder="0.00" step="0.01" min="0" required>
+      </div>
+
+      <div id="produto-fields">
+        <div class="mb-4">
+          <label for="item-quantidade" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Quantidade em Estoque:</label>
+          <input type="number" id="item-quantidade" class="input" value="0" min="0">
+        </div>
+      </div>
+
+      <div id="servico-fields" class="hidden">
+        <p class="text-gray-600 dark:text-gray-400 text-sm">Serviços não possuem controle de quantidade em estoque para venda, apenas preço.</p>
+      </div>
+
+      <div class="mb-6">
+        <label for="item-descricao" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Descrição (Opcional):</label>
+        <textarea id="item-descricao" class="input h-24 resize-none" placeholder="Breve descrição do item..."></textarea>
+      </div>
+
+      <div class="flex justify-end space-x-4 mt-6">
+        <button type="button" onclick="fecharModalItem()" class="bg-gray-300 text-gray-800 px-6 py-3 rounded-md hover:bg-gray-400 transition duration-300 ease-in-out">Cancelar</button>
+        <button type="button" onclick="salvarItem()" id="btn-salvar-item" class="btn-purple px-6 py-3">Registrar Item</button>
+      </div>
+
+      <button onclick="fecharModalItem()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl font-bold">
+        &times;
+      </button>
+    </div>
+  </div>
+
+  <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100]">
+    <div class="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-xl text-purple-700 dark:text-purple-300 flex items-center space-x-3">
+      <svg class="animate-spin h-8 w-8 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      <span>Carregando...</span>
+    </div>
+  </div>
+
+  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
+    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+    Alternar Tema
+  </button>
 </body>
 </html>
