@@ -3,389 +3,718 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Prontuário e Exames - PetClínica São Lázaro</title>
+  <title>Prontuário - PetClínica São Lázaro</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>tailwind.config = { darkMode: 'class' };</script>
+  <script>
+    // Configuração do Tailwind CSS para habilitar o dark mode via classe 'dark' no HTML
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          // Extensões de tema podem ser adicionadas aqui
+        },
+      },
+    };
+  </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+
   <script>
+    // Configurações do Firebase - **MUITO IMPORTANTE: USE SUAS CREDENCIAIS REAIS AQUI!**
+    // Estas configurações são sensíveis e devem ser mantidas seguras no ambiente de produção.
     const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
-      authDomain: "petclinica-e4bc5.firebaseapp.com",
-      projectId: "petclinica-e4bc5",
-      storageBucket: "petclinica-e4bc5.appspot.com",
-      messagingSenderId: "860007352252",
-      appId: "1:860007352252:web:7180c7d607965a062e0db9"
+      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // Chave de API do seu projeto Firebase
+      authDomain: "petclinica-e4bc5.firebaseapp.com", // Domínio de autenticação
+      projectId: "petclinica-e4bc5", // ID do projeto
+      storageBucket: "petclinica-e4bc5.appspot.com", // Bucket do Storage
+      messagingSenderId: "860007352252", // ID do Sender de mensagens
+      appId: "1:860007352252:web:7180c7d607965a062e0db9" // ID do aplicativo
     };
+
+    // Inicializa o Firebase com as configurações fornecidas
     firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
+    // Obtém instâncias dos serviços Firebase
+    const db = firebase.firestore();    // Instância do Firestore (banco de dados)
+    const auth = firebase.auth();      // Instância do Auth (autenticação)
+    const storage = firebase.storage();  // Instância do Storage (armazenamento de arquivos)
 
-    // ----------------------------------------------------
-    // FUNÇÕES DE UI E TEMA
-    // ----------------------------------------------------
+    let logoBase66 = ''; // Variável global para armazenar a logo convertida para Base64
 
-    let isDarkMode = localStorage.getItem('theme') === 'dark';
-    document.documentElement.classList.toggle('dark', isDarkMode);
+    /**
+     * @description Carrega a imagem da logo do Firebase Storage e converte para Base64.
+     * Esta função é crucial para incluir a logo nos PDFs gerados.
+     * A URL da logo no Storage deve ser pública ou as regras de Storage devem permitir acesso de leitura.
+     */
+    async function carregarLogo() {
+      try {
+        // Define a referência para o arquivo da logo no Firebase Storage.
+        // ALtere para o caminho EXATO da sua nova logo no Firebase Storage.
+        const logoRef = storage.ref('logos/IMG_3402.PNG');
 
-    function alternarTema() {
-      isDarkMode = !isDarkMode;
-      document.documentElement.classList.toggle('dark', isDarkMode);
-      if (isDarkMode) {
-        localStorage.setItem('theme', 'dark');
-      } else {
-        localStorage.removeItem('theme');
+        // Obtém a URL de download pública da logo
+        const url = await logoRef.getDownloadURL();
+        // Faz um fetch para obter o blob da imagem
+        const response = await fetch(url);
+        const blob = await response.blob();
+        // Converte o blob da imagem para Base64
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          logoBase66 = reader.result; // Armazena a imagem em Base64
+          console.log("Logo carregada com sucesso para uso em PDF!");
+        };
+        reader.readAsDataURL(blob); // Inicia a leitura do blob como URL de dados
+      } catch (error) {
+        console.error("Erro ao carregar a logo do Storage:", error);
+        alert("Erro ao carregar a logo para os PDFs. Eles serão gerados sem a imagem. Verifique as regras do Firebase Storage e o caminho da logo.");
+        // O erro não deve impedir o restante da aplicação de funcionar, apenas os PDFs não terão a logo.
       }
     }
 
-    function logout() {
-      auth.signOut().then(() => {
-        window.location.href = 'login.html';
-      }).catch((error) => {
-        console.error("Erro ao fazer logout:", error);
-        alert("Ocorreu um erro ao sair. Tente novamente.");
+    /**
+     * @description Gerencia o estado de autenticação do usuário.
+     * Redireciona para a página de login se o usuário não estiver autenticado.
+     * Caso contrário, carrega a logo e os dados iniciais da página (pacientes/pets e prontuários).
+     */
+    document.addEventListener('DOMContentLoaded', () => {
+      auth.onAuthStateChanged(user => {
+        if (!user) {
+          // Se não houver usuário logado, alerta e redireciona para a página de login
+          alert('Acesso não autorizado. Por favor, faça login.');
+          window.location.href = 'login.html';
+        } else {
+          // Se o usuário estiver autenticado, carrega os dados necessários
+          console.log("Usuário autenticado:", user.email);
+          carregarLogo();          // Carrega a logo para os PDFs
+          carregarNomesPetsDatalist(); // Carrega a lista de nomes de pets para os datalists
+          carregarProntuarios();   // Carrega e exibe os prontuários existentes
+        }
       });
-    }
 
-    // ----------------------------------------------------
-    // VERIFICAÇÃO DE AUTENTICAÇÃO E CARREGAMENTO DE DADOS
-    // ----------------------------------------------------
-    auth.onAuthStateChanged(user => {
-      if (!user) {
-        alert('Acesso não autorizado. Faça login primeiro.');
-        window.location.href = 'login.html';
-      } else {
-        carregarProntuarios(); // Carrega os prontuários se o usuário estiver logado
+      // Verifica o tema salvo no localStorage e aplica-o
+      const temaAtual = localStorage.getItem('theme');
+      if (temaAtual === 'dark') {
+        document.documentElement.classList.add('dark');
       }
     });
 
-    // ----------------------------------------------------
-    // LÓGICA DE PRONTUÁRIOS E EXAMES
-    // ----------------------------------------------------
+    /**
+     * @description Alterna entre o tema claro e escuro, adicionando ou removendo a classe 'dark'
+     * no elemento <html> e salvando a preferência no localStorage.
+     */
+    function alternarTema() {
+      if (document.documentElement.classList.contains('dark')) {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+      } else {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+      }
+    }
 
+    /**
+     * @description Realiza o logout do usuário e redireciona para a página de login.
+     */
+    function logout() {
+      auth.signOut().then(() => {
+        console.log("Usuário deslogado.");
+        window.location.href = 'login.html';
+      }).catch(error => {
+        console.error("Erro ao fazer logout:", error);
+        alert("Erro ao fazer logout. Tente novamente.");
+      });
+    }
+
+    /**
+     * @description Carrega a lista de nomes de pets do Firestore e popula os elementos <datalist>.
+     */
+    async function carregarNomesPetsDatalist() {
+      const datalistProntuario = document.getElementById('petsDatalist');
+      const datalistReceita = document.getElementById('r-petsDatalist');
+      // Limpa as opções existentes
+      datalistProntuario.innerHTML = '';
+      datalistReceita.innerHTML = '';
+
+      try {
+        const snapshot = await db.collection("pacientes").get();
+        if (snapshot.empty) {
+            console.log("Nenhum paciente/pet encontrado no Firestore para o datalist.");
+            // Não adiciona opções, o input ficará vazio para digitação livre.
+            return;
+        }
+
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          // Adiciona opção para o datalist do formulário de prontuário
+          const optionProntuario = document.createElement('option');
+          optionProntuario.value = data.pet;
+          datalistProntuario.appendChild(optionProntuario);
+
+          // Adiciona opção para o datalist do formulário de receita
+          const optionReceita = document.createElement('option');
+          optionReceita.value = data.pet;
+          datalistReceita.appendChild(optionReceita);
+        });
+      } catch (error) {
+        console.error("Erro ao carregar nomes de pets para o datalist:", error);
+        alert("Erro ao carregar lista de pets para sugestões. Verifique o console.");
+      }
+    }
+
+    /**
+     * @description Adiciona um novo registro de prontuário ao Firestore,
+     * incluindo o upload de anexos para o Firebase Storage.
+     * @param {Event} event - O evento de submit do formulário.
+     */
     async function adicionarProntuario(event) {
-      event.preventDefault();
-      const nomePet = document.getElementById('nome-pet-p').value;
-      const data = document.getElementById('data-p').value;
-      const tipoAtendimento = document.getElementById('tipo-atendimento').value;
+      event.preventDefault(); // Impede o recarregamento da página
+      // Captura os valores dos campos do formulário
+      const nomePet = document.getElementById('nomePetInput').value.trim(); // Usar o ID do input de texto
+      const data = document.getElementById('data').value;
+      const tipoAtendimento = document.getElementById('tipoAtendimento').value;
       const diagnostico = document.getElementById('diagnostico').value;
       const tratamento = document.getElementById('tratamento').value;
-      const exames = document.getElementById('exames').value;
       const observacoes = document.getElementById('observacoes').value;
+      const anexosInput = document.getElementById('anexos');
 
-      if (!nomePet || !data || !tipoAtendimento || !diagnostico || !tratamento) {
-        alert('Por favor, preencha os campos obrigatórios: Pet, Data, Tipo de Atendimento, Diagnóstico e Tratamento.');
+      // Validação básica dos campos obrigatórios
+      if (!nomePet || !data || !tipoAtendimento) {
+        alert('Por favor, preencha os campos obrigatórios: Nome do Pet, Data e Tipo de Atendimento.');
         return;
       }
 
       try {
-        await db.collection("prontuarios").add({
+        // Cria uma nova referência de documento no Firestore para o prontuário
+        const novoProntuarioRef = db.collection("prontuarios").doc();
+        const prontuarioId = novoProntuarioRef.id; // Obtém o ID gerado automaticamente
+        const anexoUrls = []; // Array para armazenar as URLs dos anexos
+
+        // Se houver arquivos selecionados, faz o upload para o Storage
+        if (anexosInput.files.length > 0) {
+          for (const file of anexosInput.files) {
+            // Cria uma referência no Storage: `prontuarios/<id_prontuario>/<nome_arquivo>`
+            const storageRef = storage.ref(`prontuarios/${prontuarioId}/${file.name}`);
+            await storageRef.put(file); // Faz o upload do arquivo
+            const downloadURL = await storageRef.getDownloadURL(); // Obtém a URL de download
+            anexoUrls.push({ name: file.name, url: downloadURL, type: file.type }); // Adiciona ao array
+          }
+          alert('Anexos enviados com sucesso!');
+        }
+
+        // Salva os dados do prontuário (incluindo as URLs dos anexos) no Firestore
+        await novoProntuarioRef.set({
           nomePet,
           data,
           tipoAtendimento,
           diagnostico,
           tratamento,
-          exames: exames || null,
-          observacoes: observacoes || null,
-          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+          observacoes,
+          anexos: anexoUrls, // Salva o array de anexos
+          createdAt: firebase.firestore.FieldValue.serverTimestamp() // Timestamp do servidor
         });
+
         alert('Prontuário adicionado com sucesso!');
-        document.getElementById('form-prontuario').reset();
-        carregarProntuarios(); // Recarrega a tabela
+        document.getElementById('form-prontuario').reset(); // Limpa o formulário
+        carregarProntuarios(); // Recarrega a lista de prontuários na tabela
+        carregarNomesPetsDatalist(); // Recarrega o datalist caso um novo pet tenha sido digitado
       } catch (error) {
         console.error("Erro ao adicionar prontuário:", error);
-        alert('Erro ao adicionar prontuário. Verifique o console.');
+        alert("Erro ao adicionar prontuário. Verifique o console e as regras de segurança do Firebase Storage/Firestore.");
       }
     }
 
+    /**
+     * @description Carrega todos os prontuários do Firestore e os exibe em uma tabela HTML.
+     */
     async function carregarProntuarios() {
-      const tabelaCorpo = document.getElementById('tabela-prontuarios');
-      tabelaCorpo.innerHTML = ''; // Limpa a tabela
+      const tabelaProntuarios = document.getElementById('tabela-prontuarios');
+      tabelaProntuarios.innerHTML = ''; // Limpa a tabela antes de carregar
 
       try {
-        const snapshot = await db.collection("prontuarios").orderBy("data", "desc").get();
+        // Busca todos os documentos na coleção "prontuarios", ordenados por data decrescente
+        const snapshot = await db.collection("prontuarios").orderBy('data', 'desc').get();
         if (snapshot.empty) {
-          tabelaCorpo.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum prontuário registrado ainda.</td></tr>';
+          tabelaProntuarios.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 dark:text-gray-400">Nenhum prontuário registrado.</td></tr>';
           return;
         }
 
+        // Para cada prontuário, cria uma nova linha na tabela
         snapshot.forEach(doc => {
-          const p = doc.data();
-          const linha = tabelaCorpo.insertRow();
-          linha.className = 'border-b border-purple-200 dark:border-purple-700';
+          const p = doc.data(); // Dados do prontuário
+          const linha = tabelaProntuarios.insertRow(); // Insere uma nova linha
+          linha.classList.add('border-b', 'border-purple-200', 'dark:border-purple-600'); // Adiciona classes de estilo
           linha.innerHTML = `
-            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'nomePet', this.textContent)">${p.nomePet}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'data', this.textContent)">${p.data}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'tipoAtendimento', this.textContent)">${p.tipoAtendimento}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'diagnostico', this.textContent)">${p.diagnostico}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'tratamento', this.textContent)">${p.tratamento}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'exames', this.textContent)">${p.exames || '-'}</td>
-            <td class="cell" contenteditable="true" onblur="editarCampoProntuario('${doc.id}', 'observacoes', this.textContent)">${p.observacoes || '-'}</td>
-            <td class="cell">
-              <button onclick="removerProntuario('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors">Remover</button>
+            <td class="p-2 cell">${p.nomePet || 'N/A'}</td>
+            <td class="p-2 cell">${p.data || 'N/A'}</td>
+            <td class="p-2 cell">${p.tipoAtendimento || 'N/A'}</td>
+            <td class="p-2 cell truncate max-w-xs cursor-help" title="${p.diagnostico || 'N/A'}">${p.diagnostico || 'N/A'}</td>
+            <td class="p-2 cell truncate max-w-xs cursor-help" title="${p.tratamento || 'N/A'}">${p.tratamento || 'N/A'}</td>
+            <td class="p-2 cell">
+              ${p.anexos && p.anexos.length > 0 ? // Verifica se há anexos
+                // Mapeia cada anexo para um link com ícone e nome truncado
+                p.anexos.map(anexo => `
+                  <a href="${anexo.url}" target="_blank" class="text-blue-600 hover:underline block text-sm" title="${anexo.name}">
+                    <svg class="inline-block w-4 h-4 mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    ${anexo.name.length > 20 ? anexo.name.substring(0, 17) + '...' : anexo.name}
+                  </a>`
+                ).join('') : // Junta os links se houver múltiplos anexos
+                '<span class="text-gray-500 dark:text-gray-400">Nenhum</span>' // Mensagem se não houver anexos
+              }
+            </td>
+            <td class="p-2 cell flex flex-col space-y-1">
+              <button onclick="gerarProntuarioCompletoPDF('${doc.id}')" class="bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 text-sm">
+                PDF Completo
+              </button>
+              <button onclick="removerProntuario('${doc.id}', ${JSON.stringify(p.anexos || [])})" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-sm">
+                Remover
+              </button>
             </td>
           `;
         });
       } catch (error) {
         console.error("Erro ao carregar prontuários:", error);
-        tabelaCorpo.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-red-500 dark:text-red-400">Erro ao carregar prontuários.</td></tr>';
+        alert("Erro ao carregar prontuários. Verifique o console. Pode ser um problema nas regras do Firestore.");
       }
     }
 
-    async function editarCampoProntuario(id, campo, valor) {
-      try {
-        const atualizar = {};
-        atualizar[campo] = valor.trim();
-        await db.collection("prontuarios").doc(id).update(atualizar);
-        console.log(`Campo ${campo} do prontuário ${id} atualizado para ${valor.trim()}`);
-      } catch (error) {
-        console.error("Erro ao editar campo:", error);
-        alert('Erro ao editar campo. Verifique o console.');
-      }
-    }
-
-    async function removerProntuario(id) {
-      if (confirm('Tem certeza que deseja remover este prontuário?')) {
+    /**
+     * @description Remove um prontuário do Firestore e todos os seus anexos do Firebase Storage.
+     * @param {string} id - O ID do documento do prontuário a ser removido.
+     * @param {Array<Object>} anexos - Um array de objetos de anexo contendo `name` e `url`.
+     */
+    async function removerProntuario(id, anexos) {
+      if (confirm('Tem certeza que deseja remover este prontuário e todos os seus anexos? Esta ação é irreversível.')) {
         try {
+          // Remove cada anexo do Storage
+          for (const anexo of anexos) {
+            const fileRef = storage.refFromURL(anexo.url); // Cria uma referência a partir da URL
+            await fileRef.delete().catch(error => {
+              // Captura erros específicos para anexos (ex: arquivo já removido, URL inválida)
+              console.warn(`Erro ao remover anexo ${anexo.name} do Storage (pode já ter sido removido ou URL inválida):`, error);
+            });
+          }
+          // Remove o documento do prontuário do Firestore
           await db.collection("prontuarios").doc(id).delete();
           alert('Prontuário removido com sucesso!');
           carregarProntuarios(); // Recarrega a tabela
+          carregarNomesPetsDatalist(); // Recarrega o datalist caso um pet tenha sido removido
         } catch (error) {
           console.error("Erro ao remover prontuário:", error);
-          alert('Erro ao remover prontuário. Verifique o console.');
+          alert("Erro ao remover prontuário. Verifique o console e as regras de segurança do Firebase Storage/Firestore.");
         }
       }
     }
 
-    function gerarReceitaPDF(event) {
-      event.preventDefault();
-      const nomePet = document.getElementById('r-nome-pet').value;
+    // --- Funções de Geração de PDF (Aprimoradas) ---
+
+    /**
+     * @description Adiciona o cabeçalho padronizado aos PDFs com um fundo roxo no topo.
+     * Inclui a logo da clínica, nome, endereço, telefone e um título específico.
+     * @param {jsPDF} doc - Instância do jsPDF.
+     * @param {string} title - Título específico do documento (e.g., "Receita Médica", "Prontuário Médico").
+     * @returns {number} A posição Y onde o conteúdo principal do documento deve começar.
+     */
+    function addPdfHeader(doc, title) {
+      const pageWidth = doc.internal.pageSize.width;
+      const headerHeight = 40; // Altura do cabeçalho com fundo roxo
+      const centerX = pageWidth / 2;
+
+      // 1. Desenha o retângulo roxo de fundo no topo
+      doc.setFillColor(128, 0, 128); // Cor roxa
+      doc.rect(0, 0, pageWidth, headerHeight, 'F'); // x, y, width, height, style ('F' para preencher)
+
+      let yPosition = 15; // Posição Y inicial para o conteúdo do cabeçalho
+
+      // 2. Adicionar logo se a imagem em Base64 estiver disponível
+      // Posiciona a logo dentro do cabeçalho roxo, com um pequeno padding
+      if (logoBase66) {
+        doc.addImage(logoBase66, 'PNG', 10, (headerHeight - 25) / 2, 50, 25); // Ajuste dimensões e posição Y
+      }
+
+      // 3. Título principal: Nome da Clínica em branco e negrito (para contraste com o fundo roxo)
+      doc.setFontSize(20).setFont(undefined, 'bold');
+      doc.setTextColor(255, 255, 255); // Cor branca (RGB: 255, 255, 255)
+      doc.text("PetClínica São Lázaro", centerX, yPosition, { align: 'center' });
+      yPosition += 10;
+
+      // 4. Informações de contato em branco
+      doc.setFontSize(10).setFont(undefined, 'normal');
+      doc.setTextColor(255, 255, 255); // Cor branca
+      doc.text("R. Imirim, 396 - Vila Pérola, Contagem - MG, 32110-070", centerX, yPosition, { align: 'center' });
+      yPosition += 6;
+      doc.text("Telefone: (31) 3357-6649", centerX, yPosition, { align: 'center' });
+
+      // 5. Resetar a cor do texto para preto para o restante do documento
+      doc.setTextColor(0, 0, 0); // Cor preta
+      doc.setFontSize(12).setFont(undefined, 'normal'); // Reseta para fonte padrão
+
+      // 6. Título específico do documento (Receita Médica ou Prontuário Médico)
+      // Este título ficará ABAIXO do cabeçalho roxo
+      let contentYPosition = headerHeight + 15; // Inicia o conteúdo após o cabeçalho roxo
+      doc.setFontSize(16).setFont(undefined, 'bold');
+      doc.text(title, centerX, contentYPosition, { align: 'center' });
+      contentYPosition += 10;
+
+      // 7. Linha divisória para separar o cabeçalho do conteúdo (em roxo, abaixo do título do documento)
+      doc.setDrawColor(128, 0, 128); // Cor roxa (RGB)
+      doc.setLineWidth(0.5);       // Espessura da linha
+      doc.line(20, contentYPosition, pageWidth - 20, contentYPosition);
+      contentYPosition += 10; // Espaço após a linha
+
+      doc.setFontSize(12).setFont(undefined, 'normal'); // Reseta a fonte para o conteúdo principal
+      return contentYPosition; // Retorna a nova posição Y para o início do conteúdo
+    }
+
+
+    /**
+     * @description Adiciona o rodapé padronizado aos PDFs.
+     * Inclui a data de geração e um espaço para assinatura/carimbo.
+     * @param {jsPDF} doc - Instância do jsPDF.
+     */
+    function addPdfFooter(doc) {
+      const pageHeight = doc.internal.pageSize.height; // Altura total da página
+      const today = new Date().toLocaleDateString('pt-BR'); // Data atual formatada
+
+      // Posição Y para o rodapé (alguns milímetros acima da margem inferior)
+      let yPosition = pageHeight - 30;
+
+      // Linha para assinatura/carimbo
+      doc.setDrawColor(0); // Cor preta para a linha
+      doc.setLineWidth(0.5);
+      doc.line(70, yPosition, doc.internal.pageSize.width - 70, yPosition);
+
+      yPosition += 5; // Espaço abaixo da linha
+
+      // Texto "Assinatura / Carimbo" centralizado
+      doc.setFontSize(10).setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0); // Cor preta
+      doc.text("Assinatura / Carimbo", doc.internal.pageSize.width / 2, yPosition, { align: 'center' });
+
+      yPosition = pageHeight - 10; // Posição Y para a data, mais próxima do final
+
+      // Data de geração do documento
+      doc.setFontSize(8).setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0); // Cor preta
+      doc.text(`Documento gerado em: ${today}`, 20, yPosition);
+    }
+
+    /**
+     * @description Gera uma Receita Médica em formato PDF com cabeçalho aprimorado e rodapé.
+     * @param {Event} event - O evento de submit do formulário.
+     */
+    async function gerarReceitaPDF(event) {
+      event.preventDefault(); // Impede o recarregamento da página
+      // Captura os valores do formulário de receita
+      const nomePet = document.getElementById('r-nomePetInput').value.trim(); // Usar o ID do input de texto
       const data = document.getElementById('r-data').value;
       const atendimento = document.getElementById('r-atendimento').value;
       const observacoes = document.getElementById('r-observacoes').value;
 
-      if (!nomePet || !data || !atendimento || !observacoes) {
-        alert('Por favor, preencha todos os campos da receita para gerar o PDF.');
+      // Validação básica
+      if (!nomePet || !data || !atendimento) {
+        alert('Por favor, preencha os campos obrigatórios da receita: Nome do Pet, Data e Atendimento.');
         return;
       }
 
+      const { jsPDF } = window.jspdf; // Obtém a classe jsPDF
+      const doc = new jsPDF();         // Cria uma nova instância de documento PDF
+
+      // Adiciona o cabeçalho padronizado e obtém a posição Y inicial para o conteúdo
+      let yPosition = addPdfHeader(doc, "Receita Médica");
+
+      // Adiciona o conteúdo da receita ao PDF
+      doc.setFontSize(12).setFont(undefined, 'normal'); // Garante que a fonte seja normal e tamanho 12 para o conteúdo
+      doc.text(`Nome do Pet: ${nomePet}`, 20, yPosition); yPosition += 10;
+      doc.text(`Data: ${data}`, 20, yPosition); yPosition += 10;
+      doc.text(`Atendimento: ${atendimento}`, 20, yPosition); yPosition += 15;
+
+      // Seção de Observações/Prescrição
+      doc.setFontSize(14).setFont(undefined, 'bold').text("Observações/Prescrição:", 20, yPosition); yPosition += 8;
+      doc.setFontSize(12).setFont(undefined, 'normal');
+      // Adiciona o texto com quebra de linha automática (maxWidth)
+      doc.text(observacoes, 20, yPosition, { maxWidth: 170 });
+      // Ajusta a posição Y com base na altura do texto renderizado
+      yPosition += doc.getTextDimensions(observacoes, { maxWidth: 170 }).h + 10;
+
+      // Adiciona o rodapé
+      addPdfFooter(doc);
+
+      // Salva o PDF com um nome descritivo
+      doc.save(`receita-${nomePet}-${data}.pdf`);
+      event.target.reset(); // Limpa o formulário após a geração
+      carregarNomesPetsDatalist(); // Recarrega o datalist caso um novo pet tenha sido digitado
+    }
+
+    /**
+     * @description Gera um Prontuário Completo em formato PDF, buscando os dados do Firestore.
+     * @param {string} id - O ID do documento do prontuário a ser gerado.
+     */
+    async function gerarProntuarioCompletoPDF(id) {
+      // Busca o documento do prontuário no Firestore pelo ID
+      const docSnap = await db.collection("prontuarios").doc(id).get();
+      if (!docSnap.exists) {
+        alert('Prontuário não encontrado.');
+        return;
+      }
+
+      const prontuario = docSnap.data(); // Obtém os dados do prontuário
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
-      doc.text("PetClínica São Lázaro - Receita Médica", 105, 20, null, null, "center");
-      
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text("Endereço: R. Imirim, 396 - Vila Pérola, Contagem - MG, 32110-070", 105, 28, null, null, "center");
-      doc.text("Telefone: (31) 3357-6649", 105, 34, null, null, "center");
+      // Adiciona o cabeçalho padronizado e obtém a posição Y inicial para o conteúdo
+      let y = addPdfHeader(doc, "Prontuário Médico");
 
-      doc.setFontSize(12);
-      doc.text(`Nome do Pet: ${nomePet}`, 20, 50);
-      doc.text(`Data: ${data}`, 20, 57);
-      doc.text(`Atendimento: ${atendimento}`, 20, 64);
-      
-      doc.setFontSize(14);
-      doc.text("Observações/Prescrição:", 20, 75);
-      
-      doc.setFontSize(12);
-      // Adiciona o texto das observações com quebra de linha automática
-      const splitText = doc.splitTextToSize(observacoes, 170); // 170mm de largura máxima
-      doc.text(splitText, 20, 85);
+      // Adiciona os detalhes do prontuário ao PDF
+      doc.setFontSize(12).setFont(undefined, 'normal'); // Garante que a fonte seja normal e tamanho 12 para o conteúdo
+      doc.text(`Nome do Pet: ${prontuario.nomePet || 'N/A'}`, 20, y); y += 10;
+      doc.text(`Data do Atendimento: ${prontuario.data || 'N/A'}`, 20, y); y += 10;
+      doc.text(`Tipo de Atendimento: ${prontuario.tipoAtendimento || 'N/A'}`, 20, y); y += 15;
 
-      // Assinatura e Data no final da página (simulado)
-      const pageHeight = doc.internal.pageSize.height;
-      doc.text("___________________________________", 105, pageHeight - 30, null, null, "center");
-      doc.text("Assinatura do Veterinário", 105, pageHeight - 25, null, null, "center");
-      doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 105, pageHeight - 15, null, null, "center");
+      // Seção de Diagnóstico
+      doc.setFontSize(14).setFont(undefined, 'bold').text("Diagnóstico:", 20, y); y += 8;
+      doc.setFontSize(12).setFont(undefined, 'normal').text(prontuario.diagnostico || "N/A", 20, y, { maxWidth: 170 });
+      y += doc.getTextDimensions(prontuario.diagnostico || "N/A", { maxWidth: 170 }).h + 5;
 
-      doc.save(`receita-${nomePet}-${data}.pdf`);
-      event.target.reset(); // Limpa o formulário após gerar o PDF
+      // Seção de Tratamento
+      doc.setFontSize(14).setFont(undefined, 'bold').text("Tratamento:", 20, y); y += 8;
+      doc.setFontSize(12).setFont(undefined, 'normal').text(prontuario.tratamento || "N/A", 20, y, { maxWidth: 170 });
+      y += doc.getTextDimensions(prontuario.tratamento || "N/A", { maxWidth: 170 }).h + 5;
+
+      // Seção de Observações
+      doc.setFontSize(14).setFont(undefined, 'bold').text("Observações:", 20, y); y += 8;
+      doc.setFontSize(12).setFont(undefined, 'normal').text(prontuario.observacoes || "N/A", 20, y, { maxWidth: 170 });
+      y += doc.getTextDimensions(prontuario.observacoes || "N/A", { maxWidth: 170 }).h + 10;
+
+      // Adicionar links para anexos
+      if (prontuario.anexos && prontuario.anexos.length > 0) {
+        doc.setFontSize(14).setFont(undefined, 'bold').text("Anexos (URLs):", 20, y); y += 8;
+        doc.setFontSize(10).setFont(undefined, 'normal');
+        prontuario.anexos.forEach(anexo => {
+          // Adiciona nova página se o conteúdo exceder o limite da página atual,
+          // garantindo espaço para o rodapé também.
+          if (y > doc.internal.pageSize.height - 50) { // Ajustado para considerar o rodapé
+            doc.addPage();
+            y = addPdfHeader(doc, "Prontuário Médico (Continuação)"); // Adiciona o cabeçalho na nova página
+          }
+          doc.text(`- ${anexo.name}:`, 20, y);
+          doc.setTextColor(0, 0, 255); // Define a cor para azul (para links)
+          const textWidth = doc.getTextWidth(`- ${anexo.name}: `); // Calcula a largura do texto antes do link
+          doc.textWithLink(anexo.url, 20 + textWidth, y, { url: anexo.url }); // Adiciona o link clicável
+          doc.setTextColor(0); // Volta a cor para preto
+          y += 7;
+        });
+      }
+
+      // Adiciona o rodapé
+      addPdfFooter(doc);
+
+      // Salva o PDF
+      doc.save(`prontuario-${prontuario.nomePet}-${prontuario.data}.pdf`);
     }
   </script>
-</head>
-<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-white font-sans antialiased">
-  <header class="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-md">
-    <div class="container mx-auto flex justify-between items-center">
-      <h1 class="text-3xl font-extrabold tracking-tight">Prontuário e Exames</h1>
-      <nav class="flex space-x-6 items-center">
-        <a href="index.html" class="hover:text-purple-200 transition duration-300">Dashboard</a>
-        <a href="admin.html" class="hover:text-purple-200 transition duration-300">Painel Administrativo</a>
-        <button onclick="logout()" class="bg-white text-purple-800 px-4 py-2 rounded-full font-semibold shadow-sm hover:bg-purple-100 transition duration-300 transform hover:scale-105">Sair</button>
-      </nav>
-    </div>
-  </header>
-
-  <main class="container mx-auto p-8">
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Registrar Novo Prontuário</h2>
-      <form id="form-prontuario" onsubmit="adicionarProntuario(event)" class="space-y-4">
-        <div>
-          <label for="nome-pet-p" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nome do Pet:</label>
-          <input type="text" id="nome-pet-p" class="input" placeholder="Nome do pet" required>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label for="data-p" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Data do Atendimento:</label>
-            <input type="date" id="data-p" class="input" required>
-          </div>
-          <div>
-            <label for="tipo-atendimento" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Tipo de Atendimento:</label>
-            <input type="text" id="tipo-atendimento" class="input" placeholder="Ex: Consulta, Cirurgia, Vacinação" required>
-          </div>
-        </div>
-        <div>
-          <label for="diagnostico" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Diagnóstico:</label>
-          <textarea id="diagnostico" class="input h-24" placeholder="Diagnóstico do caso" required></textarea>
-        </div>
-        <div>
-          <label for="tratamento" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Tratamento/Medicação:</label>
-          <textarea id="tratamento" class="input h-24" placeholder="Tratamento e medicações prescritas" required></textarea>
-        </div>
-        <div>
-          <label for="exames" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Exames Realizados (Opcional):</label>
-          <textarea id="exames" class="input h-20" placeholder="Resultados de exames, se houver"></textarea>
-        </div>
-        <div>
-          <label for="observacoes" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Observações Adicionais (Opcional):</label>
-          <textarea id="observacoes" class="input h-20" placeholder="Outras observações relevantes"></textarea>
-        </div>
-        <button type="submit" class="btn-purple">Salvar Prontuário</button>
-      </form>
-    </section>
-
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600 mb-8">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Gerar Receita Médica (PDF)</h2>
-      <form onsubmit="gerarReceitaPDF(event)" class="space-y-4">
-        <div>
-          <label for="r-nome-pet" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nome do Pet:</label>
-          <input type="text" id="r-nome-pet" class="input" placeholder="Nome do pet" required>
-        </div>
-        <div>
-          <label for="r-data" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Data:</label>
-          <input type="date" id="r-data" class="input" required>
-        </div>
-        <div>
-          <label for="r-atendimento" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Tipo de Atendimento:</label>
-          <input type="text" id="r-atendimento" class="input" placeholder="Ex: Consulta, Retorno" required>
-        </div>
-        <div>
-          <label for="r-observacoes" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Prescrição/Observações (Receita):</label>
-          <textarea id="r-observacoes" class="input h-32" placeholder="Descreva a medicação, dosagem e observações para a receita" required></textarea>
-        </div>
-        <button type="submit" class="btn-outline-purple">Gerar Receita em PDF</button>
-      </form>
-    </section>
-
-    <section class="bg-white dark:bg-gray-700 p-6 rounded-xl shadow-lg border border-purple-200 dark:border-purple-600">
-      <h2 class="text-2xl font-bold mb-5 text-purple-800 dark:text-purple-300">Prontuários Registrados</h2>
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border border-purple-300 dark:border-purple-600 rounded-lg overflow-hidden">
-          <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200">
-            <tr>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Pet</th>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Data</th>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Tipo Atend.</th>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Diagnóstico</th>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Tratamento</th>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Exames</th>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Observações</th>
-              <th class="p-3 border border-purple-300 dark:border-purple-600">Ações</th>
-            </tr>
-          </thead>
-          <tbody id="tabela-prontuarios" class="bg-white dark:bg-gray-700 dark:text-white">
-            </tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-
-  <button onclick="alternarTema()" class="fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-full shadow-lg hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 transition duration-300 ease-in-out flex items-center">
-    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-    Alternar Tema
-  </button>
 
   <style>
-    /* Estilos customizados para inputs e botões */
+    /* Estilos CSS personalizados para consistência e dark mode */
+
+    /* Estilos para inputs de texto, data e textarea */
     .input {
       width: 100%;
-      padding: 0.75rem;
+      padding: 0.5rem;
       border: 1px solid #c084fc; /* purple-400 */
-      border-radius: 0.5rem; /* rounded-lg */
+      border-radius: 0.375rem; /* rounded-md */
       background-color: white;
       color: black;
-      font-size: 1rem;
     }
     .dark .input {
       background-color: #374151; /* gray-700 */
       color: white;
       border-color: #4b5563; /* gray-600 */
     }
-    .input:focus {
-      outline: none;
-      border-color: #8b5cf6; /* purple-500 */
-      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
-    }
+
+    /* Estilos para botões roxos */
     .btn-purple {
       background-color: #8b5cf6; /* purple-500 */
       color: white;
-      padding: 0.75rem 1.5rem;
-      border-radius: 0.5rem; /* rounded-lg */
-      transition: background-color 0.2s, transform 0.2s;
-      font-weight: 600;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      transition: background-color 0.2s; /* Transição suave no hover */
     }
     .btn-purple:hover {
       background-color: #7c3aed; /* purple-600 */
-      transform: translateY(-1px);
     }
-    .dark .btn-purple {
-      background-color: #c084fc; /* purple-400 */
-      color: #3b0764; /* purple-950 */
-    }
-    .dark .btn-purple:hover {
-      background-color: #a855f7; /* purple-500 */
-      color: white;
-    }
-    .btn-outline-purple {
-      background-color: transparent;
-      color: #8b5cf6; /* purple-500 */
-      border: 2px solid #8b5cf6;
-      padding: 0.75rem 1.5rem;
-      border-radius: 0.5rem; /* rounded-lg */
-      transition: all 0.2s;
-      font-weight: 600;
-      width: 100%; /* Ocupa a largura total */
-      text-align: center; /* Centraliza o texto */
-    }
-    .btn-outline-purple:hover {
-      background-color: #ede9fe; /* purple-50 */
-      color: #7c3aed; /* purple-600 */
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-    .dark .btn-outline-purple {
-      color: #c084fc; /* purple-400 */
-      border-color: #c084fc;
-    }
-    .dark .btn-outline-purple:hover {
-      background-color: #581c87; /* purple-900 */
-      color: white;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    }
+
+    /* Estilos para as células da tabela */
     .cell {
-      padding: 0.75rem;
+      padding: 0.5rem;
       border: 1px solid #d8b4fe; /* purple-300 */
-      text-align: left;
+      word-break: break-word; /* Garante que o texto quebre em palavras longas */
     }
     .dark .cell {
-      border-color: #6b21a8; /* purple-700 */
+      border-color: #7e22ce; /* purple-700 */
+    }
+
+    /* Estilo para o botão de seleção de arquivo (file selector button) */
+    input[type="file"]::file-selector-button {
+      background-color: #f3e8ff; /* purple-50 */
+      color: #7c3aed; /* purple-700 */
+      border: 0;
+      border-radius: 9999px; /* rounded-full */
+      padding: 0.5rem 1rem;
+      margin-right: 1rem;
+      font-size: 0.875rem; /* text-sm */
+      font-weight: 600; /* font-semibold */
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    input[type="file"]::file-selector-button:hover {
+      background-color: #ede9fe; /* purple-100 */
+    }
+    .dark input[type="file"]::file-selector-button {
+      background-color: #581c87; /* purple-900 */
+      color: #e9d5ff; /* purple-200 */
+    }
+    .dark input[type="file"]::file-selector-button:hover {
+      background-color: #4c1d95; /* purple-800 */
     }
   </style>
+</head>
+<body class="bg-gray-50 text-purple-900 dark:bg-gray-800 dark:text-gray-100 min-h-screen">
+  <header class="bg-purple-700 dark:bg-purple-900 text-white shadow-md">
+    <div class="container mx-auto p-4 flex justify-between items-center relative max-w-screen-xl"> 
+      <div class="flex-shrink-0 flex items-center"> 
+        <a href="index.html" class="flex items-center cursor-pointer hover:opacity-90 transition-opacity duration-200">
+          <img src="./img/IMG_3402.PNG" alt="PetClínica São Lázaro Logo" class="h-24 mr-3 object-contain"> 
+          </a>
+      </div>
+      
+      <button id="menu-toggle" class="lg:hidden text-white focus:outline-none z-50">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+      </button>
+
+      <nav id="mobile-menu" class="hidden lg:block absolute lg:static top-full left-0 w-full lg:w-auto 
+                                    bg-purple-700 dark:bg-purple-900 lg:bg-transparent lg:dark:bg-transparent 
+                                    shadow-lg lg:shadow-none z-40 
+                                    lg:flex lg:flex-grow lg:items-center lg:justify-end">
+        <ul class="flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-6 p-4 lg:p-0 
+                   lg:flex-wrap lg:justify-end"> 
+          <li><a href="index.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Dashboard</a></li>
+          <li><a href="agendamentos.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Agendamentos</a></li>
+          <li><a href="pacientes-tutores.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Pacientes e Tutores</a></li>
+          <li><a href="prontuario.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Prontuários</a></li>
+          <li><a href="controle-vacinas.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Vacinas</a></li>
+          <li><a href="controle-estoque.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Estoque</a></li>
+          <li><a href="relatorio-vendas.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Vendas</a></li>
+          <li><a href="financeiro.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Financeiro</a></li>
+          <li><a href="admin.html" class="block py-2 px-4 lg:p-0 hover:text-purple-200 transition duration-300">Administrativo</a></li>
+          <li><button onclick="logout()" class="block w-full text-left bg-red-500 px-4 py-2 rounded-md hover:bg-red-600 transition duration-300 lg:ml-6">Sair</button></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container mx-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    <section class="bg-white p-6 rounded shadow-lg dark:bg-gray-700">
+      <h2 class="text-xl font-semibold mb-4 text-purple-700 dark:text-purple-300">Novo Registro de Prontuário</h2>
+      <form id="form-prontuario" onsubmit="adicionarProntuario(event)" class="space-y-4">
+        <div>
+          <label for="nomePetInput" class="block text-sm font-medium mb-1">Nome do Pet (digite ou selecione):</label>
+          <input type="text" id="nomePetInput" list="petsDatalist" placeholder="Digite ou selecione o nome do Pet" required class="input">
+          <datalist id="petsDatalist">
+            </datalist>
+        </div>
+        <div>
+          <label for="data" class="block text-sm font-medium mb-1">Data do Atendimento:</label>
+          <input type="date" id="data" required class="input">
+        </div>
+        <div>
+          <label for="tipoAtendimento" class="block text-sm font-medium mb-1">Tipo de Atendimento:</label>
+          <input type="text" id="tipoAtendimento" placeholder="Ex: Consulta, Cirurgia, Retorno" required class="input">
+        </div>
+        <div>
+          <label for="diagnostico" class="block text-sm font-medium mb-1">Diagnóstico:</label>
+          <textarea id="diagnostico" rows="3" placeholder="Diagnóstico do animal" class="input"></textarea>
+        </div>
+        <div>
+          <label for="tratamento" class="block text-sm font-medium mb-1">Tratamento/Medicação:</label>
+          <textarea id="tratamento" rows="3" placeholder="Tratamento ou medicação prescrita" class="input"></textarea>
+        </div>
+        <div>
+          <label for="observacoes" class="block text-sm font-medium mb-1">Observações:</label>
+          <textarea id="observacoes" rows="3" placeholder="Outras observações importantes" class="input"></textarea>
+        </div>
+        <div>
+          <label for="anexos" class="block w-full text-sm font-medium mb-1">Anexar Documentos/Imagens (Exames, Laudos):</label>
+          <input type="file" id="anexos" multiple class="block w-full text-sm text-gray-500
+            file:mr-4 file:py-2 file:px-4
+            file:rounded-full file:border-0
+            file:text-sm file:font-semibold
+            file:bg-purple-50 file:text-purple-700
+            hover:file:bg-purple-100 dark:file:bg-purple-900 dark:file:text-purple-200 dark:hover:file:bg-purple-800">
+        </div>
+        <button type="submit" class="btn-purple w-full">Registrar Prontuário</button>
+      </form>
+    </section>
+
+    <section class="bg-white p-6 rounded shadow-lg dark:bg-gray-700">
+      <h2 class="text-xl font-semibold mb-4 text-purple-700 dark:text-purple-300">Gerar Receita Médica (PDF)</h2>
+      <form onsubmit="gerarReceitaPDF(event)" class="space-y-4">
+        <div>
+          <label for="r-nomePetInput" class="block text-sm font-medium mb-1">Nome do Pet (digite ou selecione):</label>
+          <input type="text" id="r-nomePetInput" list="r-petsDatalist" placeholder="Digite ou selecione o nome do Pet" required class="input">
+          <datalist id="r-petsDatalist">
+            </datalist>
+        </div>
+        <div>
+          <label for="r-data" class="block text-sm font-medium mb-1">Data:</label>
+          <input type="date" id="r-data" required class="input">
+        </div>
+        <div>
+          <label for="r-atendimento" class="block text-sm font-medium mb-1">Atendimento:</label>
+          <input type="text" id="r-atendimento" placeholder="Ex: Consulta de rotina" required class="input">
+        </div>
+        <div>
+          <label for="r-observacoes" class="block text-sm font-medium mb-1">Descrição da Medicação/Tratamento:</label>
+          <textarea id="r-observacoes" rows="5" placeholder="Detalhes da medicação, dosagem, frequência, etc." class="input"></textarea>
+        </div>
+        <button type="submit" class="btn-purple w-full">Gerar Receita</button>
+      </form>
+    </section>
+
+    <section class="bg-white p-6 rounded shadow-lg dark:bg-gray-700 md:col-span-2">
+      <h2 class="text-xl font-semibold mb-4 text-purple-700 dark:text-purple-300">Prontuários Registrados</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border border-purple-300 dark:border-purple-600 mb-4">
+          <thead class="bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-100">
+            <tr>
+              <th class="p-2 border border-purple-300 dark:border-purple-600">Pet</th>
+              <th class="p-2 border border-purple-300 dark:border-purple-600">Data</th>
+              <th class="p-2 border border-purple-300 dark:border-purple-600">Atendimento</th>
+              <th class="p-2 border border-purple-300 dark:border-purple-600">Diagnóstico</th>
+              <th class="p-2 border border-purple-300 dark:border-purple-600">Tratamento</th>
+              <th class="p-2 border border-purple-300 dark:border-purple-600">Anexos</th>
+              <th class="p-2 border border-purple-300 dark:border-purple-600">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-prontuarios" class="bg-white dark:bg-gray-700 dark:text-white">
+            <tr><td colspan="7" class="p-4 text-center text-gray-500 dark:text-gray-400">Carregando prontuários...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <button onclick="alternarTema()" class="fixed bottom-4 left-4 bg-gray-800 text-white px-4 py-2 rounded shadow hover:bg-gray-700 dark:bg-white dark:text-black">
+    🌓 Tema
+  </button>
 </body>
 </html>
