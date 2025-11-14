@@ -25,33 +25,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 
   <script>
-    // Configuração do Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // <<< SUA CHAVE API FIREBASE INSERIDA AQUI >>>
-      authDomain: "petclinica-e4bc5.firebaseapp.com",
-      projectId: "petclinica-e4bc5",
-      storageBucket: "petclinica-e4bc5.firebasestorage.app", // Atualizado conforme seu dado
-      messagingSenderId: "860007352252",
-      appId: "1:860007352252:web:7180c7d607965a062e0db9"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
-
-    let editingItemId = null; // Para rastrear o item que está sendo editado
-    let editingItemType = null; // 'produto' ou 'servico'
-
-    // Listener para verificar o estado de autenticação
-    auth.onAuthStateChanged(user => {
-      if (!user) {
-        console.log("Usuário não autenticado. Redirecionando para login.html");
-        window.location.href = 'login.html';
-      } else {
-        console.log("Usuário autenticado:", user.email);
-        carregarItens(); // Carrega produtos e serviços ao autenticar
-      }
-    });
+  
 
     // Função para alternar o tema (claro/escuro)
     function alternarTema() {
@@ -518,3 +492,4 @@
   </button>
 </body>
 </html>
+
