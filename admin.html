@@ -10,18 +10,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script>
-    // Configuração do Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // SUA CHAVE AQUI
-      authDomain: "petclinica-e4bc5.firebaseapp.com",
-      projectId: "petclinica-e4bc5",
-      storageBucket: "petclinica-e4bc5.appspot.com",
-      messagingSenderId: "860007352252",
-      appId: "1:860007352252:web:7180c7d607965a062e0db9"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-
+   
     // Estado do tema (claro/escuro)
     let isDarkMode = localStorage.getItem('theme') === 'dark';
     document.documentElement.classList.toggle('dark', isDarkMode);
@@ -141,4 +130,5 @@
     }
   </style>
 </body>
+
 </html>
