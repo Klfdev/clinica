@@ -16,18 +16,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // Substitua pela sua chave de API
-      authDomain: "petclinica-e4bc5.firebaseapp.com",
-      projectId: "petclinica-e4bc5",
-      storageBucket: "petclinica-e4bc5.appspot.com",
-      messagingSenderId: "860007352252",
-      appId: "1:860007352252:web:7180c7d607965a062e0db9"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
-
+    
     let agendamentosCache = []; // Cache para armazenar os dados dos agendamentos
     let calendarInstance = null; // Variável para armazenar a instância do FullCalendar
 
@@ -471,3 +460,4 @@
   </button>
 </body>
 </html>
+
