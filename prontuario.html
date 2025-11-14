@@ -27,22 +27,14 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
 
   <script>
-    // Configurações do Firebase - **MUITO IMPORTANTE: USE SUAS CREDENCIAIS REAIS AQUI!**
-    // Estas configurações são sensíveis e devem ser mantidas seguras no ambiente de produção.
-    const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // Chave de API do seu projeto Firebase
-      authDomain: "petclinica-e4bc5.firebaseapp.com", // Domínio de autenticação
-      projectId: "petclinica-e4bc5", // ID do projeto
-      storageBucket: "petclinica-e4bc5.appspot.com", // Bucket do Storage
-      messagingSenderId: "860007352252", // ID do Sender de mensagens
-      appId: "1:860007352252:web:7180c7d607965a062e0db9" // ID do aplicativo
+    
     };
 
     // Inicializa o Firebase com as configurações fornecidas
     firebase.initializeApp(firebaseConfig);
     // Obtém instâncias dos serviços Firebase
     const db = firebase.firestore();    // Instância do Firestore (banco de dados)
-    const auth = firebase.auth();      // Instância do Auth (autenticação)
+
     const storage = firebase.storage();  // Instância do Storage (armazenamento de arquivos)
 
     let logoBase66 = ''; // Variável global para armazenar a logo convertida para Base64
@@ -718,3 +710,4 @@
   </button>
 </body>
 </html>
+
