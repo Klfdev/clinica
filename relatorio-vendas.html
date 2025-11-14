@@ -31,26 +31,7 @@
     // SCRIPT DEFINITIVO (v15 - Ambas as tabelas no PDF com cabeçalho roxo e corpo estilizado)
     
     // Configuração do Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyBJUAFYU7JIYnLs3vCHAwGsrUJHPjHn3BU", // <<< SUA CHAVE API FIREBASE INSERIDA AQUI >>>
-      authDomain: "petclinica-e4bc5.firebaseapp.com",
-      projectId: "petclinica-e4bc5",
-      storageBucket: "petclinica-e4bc5.firebasestorage.app", 
-      messagingSenderId: "860007352252",
-      appId: "1:860007352252:web:7180c7d607965a062e0db9"
-    };
-
-    // Inicialização do Firebase App
-    let app;
-    try {
-        app = firebase.initializeApp(firebaseConfig);
-    } catch (error) {
-        console.error("Erro ao inicializar Firebase app:", error);
-        alert("Erro crítico: Falha ao inicializar o Firebase.");
-    }
-
-    const auth = firebase.auth();
-    const db = firebase.firestore();
+  
 
     // Variáveis globais
     let itensNoCarrinho = [];
@@ -1074,3 +1055,4 @@
   </script>
 </body>
 </html>
+
